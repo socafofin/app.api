@@ -1,0 +1,6 @@
+python spoof_fivem.py
+
+cd C:\Users\fivem\SPOOFER
+
+Comando Final Completo
+pyinstaller --onefile --windowed --add-data "logo.png;." --add-data "background.png;." spoof_fivem.py
