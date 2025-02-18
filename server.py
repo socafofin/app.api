@@ -12,7 +12,7 @@ load_dotenv()
 
 # Configuração do log
 logging.basicConfig(filename='server.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+                    format='%(asctime)s - %(levelname)s - %(message)s'
 
 # Variáveis de ambiente
 DATABASE_URL = os.environ.get("DATABASE_URL")  # Recupera o valor
