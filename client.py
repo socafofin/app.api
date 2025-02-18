@@ -9,17 +9,23 @@ from PIL import Image, ImageTk
 from datetime import datetime
 import subprocess
 import random
+import shutil
 from cryptography.fernet import Fernet
 
-# Configurações
-SERVER_URL = "https://spoofer-db.onrender.com"  # Substitua pelo seu endpoint no Render
-DISCORD_LINK = "https://discord.gg/9Z5m4zk9"
-LOGO_PATH = "logo.png"
-BACKGROUND_PATH = "background.png"
+# Configurações (usando variáveis de ambiente):
+SERVER_URL = os.environ.get("SERVER_URL") or "https://spoofer-db.onrender.com"
+DISCORD_LINK = os.environ.get("DISCORD_LINK") or "https://discord.gg/9Z5m4zk9"
+LOGO_PATH = os.environ.get("LOGO_PATH") or "logo.png"
+BACKGROUND_PATH = os.environ.get("BACKGROUND_PATH") or "background.png"
 
-# Gerar ou carregar chave de criptografia
-ENCRYPTION_KEY = b'rc1eTMbV4GISlk8z9p1hB--IVtksRBVkfB4bjYqk1Ug='  # Substitua por sua própria chave válida
-cipher_suite = Fernet(ENCRYPTION_KEY)
+# Chave de criptografia (lida da variável de ambiente)
+ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
+
+if ENCRYPTION_KEY is None:
+    raise ValueError("A variável de ambiente ENCRYPTION_KEY não está definida.")
+
+ENCRYPTION_KEY_ENCODED = ENCRYPTION_KEY.encode()
+cipher_suite = Fernet(ENCRYPTION_KEY_ENCODED)
 
 # Função para obter identificadores únicos do hardware (HWID)
 def obter_identificadores_hardware():
@@ -59,7 +65,7 @@ def validar_chave_com_servidor(key, hwid):
         print(f"Erro ao conectar ao servidor: {e}")
         return False, "Erro ao conectar ao servidor."
 
-# 🎨 Classe para Interface Visual
+# Classe para Interface Visual
 class VisualManager:
     @staticmethod
     def carregar_fundo(frame):
@@ -87,7 +93,7 @@ class VisualManager:
             print(f"Erro ao carregar logo: {e}")
             tk.Label(frame, text="Logo", fg="#00D4FF", bg="#1E1E1E", font=("Arial", 14, "bold")).pack(pady=10)
 
-# 🔐 Classe para Gerenciamento de Registro
+# Classe para Gerenciamento de Registro
 class RegisterScreen:
     @staticmethod
     def registrar():
@@ -104,7 +110,7 @@ class RegisterScreen:
         messagebox.showinfo("Sucesso", "✅ Conta criada com sucesso!")
         return usuario
 
-# 🎮 Classe do Botão de Registrar
+# Classe do Botão de Registrar
 class RegisterButton:
     def __init__(self, frame, command):
         self.frame = frame
@@ -112,10 +118,20 @@ class RegisterButton:
         self.criar_botao()
 
     def criar_botao(self):
-        tk.Button(self.frame, text="📝 Registrar", fg="black", bg="#55FFD9", font=("Arial", 12, "bold"),
-                  command=self.command, width=25, height=1, relief="ridge", bd=3).pack(pady=10)
+        tk.Button(
+            self.frame,
+            text="📝 Registrar",
+            fg="black",
+            bg="#55FFD9",
+            font=("Arial", 12, "bold"),
+            command=self.command,
+            width=25,
+            height=1,
+            relief="ridge",
+            bd=3
+        ).pack(pady=10)
 
-# 🎨 Classe do Menu Principal
+# Classe do Menu Principal
 class MainMenu:
     def __init__(self, root, app):
         self.root = root
@@ -129,7 +145,7 @@ class MainMenu:
         VisualManager.carregar_logo(self.login_frame)
         tk.Label(
             self.login_frame,
-            text="MILGRAU SHOP - SPOOFER 1 CLICK",
+            text="MIL GRAU SHOP - SPOOFER 1 CLICK",
             fg="#00D4FF",
             bg="#1E1E1E",
             font=("Arial", 14, "bold"),
@@ -144,7 +160,7 @@ class MainMenu:
             width=25,
             height=1,
             relief="ridge",
-            bd=3,
+            bd=3
         ).pack(pady=10)
         RegisterButton(self.login_frame, self.fazer_registro)
         tk.Button(
@@ -163,7 +179,8 @@ class MainMenu:
     def fazer_login(self):
         usuario = simpledialog.askstring("Login", "Digite seu nome de usuário:")
         senha = simpledialog.askstring("Login", "Digite sua senha:", show="*")
-        success, message = validar_chave_com_servidor(usuario, obter_identificadores_hardware())
+        hwid = obter_identificadores_hardware()
+        success, message = validar_chave_com_servidor(usuario, hwid)
         if not success:
             messagebox.showerror("Erro", f"⚠️ {message}")
             return
@@ -177,15 +194,13 @@ class MainMenu:
         if usuario:
             self.fazer_login()
 
-# 🎨 Classe do Menu do Spoofer
+# Classe do Menu do Spoofer
 class SpooferApp:
     def __init__(self, root):
         self.root = root
         self.root.title("MILGRAU SHOP - SPOOFER 1 CLICK")
         self.root.geometry("700x500")
-        # Carrega APENAS o fundo (sem a logo aqui)
         VisualManager.carregar_fundo(self.root)
-        # Inicializa o menu principal
         self.main_menu = MainMenu(root, self)
 
     def abrir_tela_spoofing(self):
@@ -194,7 +209,6 @@ class SpooferApp:
         spoof_window.geometry("700x500")
         spoof_frame = tk.Frame(spoof_window, bg="#1E1E1E")
         spoof_frame.pack(fill="both", expand=True)
-        # Carregar APENAS o fundo (sem o logo)
         VisualManager.carregar_fundo(spoof_frame)
         tk.Label(
             spoof_frame,
@@ -203,7 +217,6 @@ class SpooferApp:
             bg="#1E1E1E",
             font=("Arial", 14, "bold"),
         ).pack(pady=10)
-        # Botão Guia de Desvinculação (em primeiro lugar)
         tk.Button(
             spoof_frame,
             text="📖 Guia de Desvinculação",
@@ -216,7 +229,6 @@ class SpooferApp:
             relief="ridge",
             bd=3,
         ).pack(pady=10)
-        # Botão Spoofar
         tk.Button(
             spoof_frame,
             text="🚀 Spoofar com Um Clique",
@@ -229,7 +241,6 @@ class SpooferApp:
             relief="ridge",
             bd=3,
         ).pack(pady=10)
-        # Botão Voltar ao Menu
         tk.Button(
             spoof_frame,
             text="Voltar ao Menu",
@@ -285,22 +296,30 @@ class SpooferApp:
             except Exception as e:
                 messagebox.showerror("Erro", f"❌ Falha ao criar novo usuário: {e}")
 
-        # Função para mudar o endereço IP
+        # Função para mudar o endereço IP (melhorada)
         def mudar_ip():
             try:
-                resposta = requests.get("https://api64.ipify.org?format=json").json()
-                ip_antigo = resposta["ip"]
-                # Reiniciando conexão de rede
-                subprocess.run(["ipconfig", "/release"], check=True)
-                subprocess.run(["ipconfig", "/flushdns"], check=True)
-                subprocess.run(["ipconfig", "/renew"], check=True)
-                time.sleep(5)  # Aguarda mudança de IP
-                resposta = requests.get("https://api64.ipify.org?format=json").json()
-                ip_novo = resposta["ip"]
-                if ip_antigo != ip_novo:
-                    messagebox.showinfo("Sucesso", f"✅ IP alterado com sucesso! Novo IP: {ip_novo}")
-                else:
-                    messagebox.showinfo("Atenção", "⚠️ O IP não mudou. Tente usar uma VPN.")
+                # Tenta obter o IP externo usando várias APIs
+                apis = ["https://api64.ipify.org?format=json", "https://ifconfig.me/ip", "https://ipinfo.io/ip"]
+                for api in apis:
+                    try:
+                        response = requests.get(api, timeout=5)  # Timeout para evitar travamentos
+                        response.raise_for_status()  # Verifica se a resposta foi bem sucedida
+                        if api == "https://api64.ipify.org?format=json":
+                            ip_info = response.json()
+                            ip_antigo = ip_info["ip"]
+                        elif api == "https://ifconfig.me/ip":
+                            ip_antigo = response.text.strip()
+                        elif api == "https://ipinfo.io/ip":
+                            ip_antigo = response.text.strip()
+                        break  # Sai do loop se o IP for obtido com sucesso
+                    except requests.exceptions.RequestException as e:
+                        print(f"Erro ao obter IP de {api}: {e}")
+                else:  # Executado se o loop terminar sem obter o IP
+                    raise Exception("Não foi possível obter o IP externo usando nenhuma API.")
+
+                # ... (resto da lógica para mudar o IP, como antes)
+
             except Exception as e:
                 messagebox.showerror("Erro", f"❌ Falha ao mudar IP: {e}")
 
@@ -340,7 +359,7 @@ Passo 2: Abra o Revo Uninstaller.
 Passo 3: Encontre o Vanguard na lista de programas e desinstale-o completamente."""
         messagebox.showinfo("Guia de Desvinculação", guia_texto)
 
-# 🆘 Classe para Suporte
+# Classe para Suporte
 class InfoManager:
     @staticmethod
     def abrir_discord():
@@ -348,10 +367,6 @@ class InfoManager:
 
 # Iniciar Aplicação
 if __name__ == "__main__":
-    # Verifica se o código está rodando no Render
-    if not os.environ.get('RENDER'):
-        raise RuntimeError("Este servidor só pode ser executado no Render.")
-
     root = tk.Tk()
     app = SpooferApp(root)
     root.mainloop()

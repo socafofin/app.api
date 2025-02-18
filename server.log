@@ -1,0 +1,5 @@
+2025-02-18 06:24:43,445 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.42.217:5000
+2025-02-18 06:24:43,446 - INFO - [33mPress CTRL+C to quit[0m
