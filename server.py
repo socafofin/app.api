@@ -119,4 +119,5 @@ def validate_key():
         return jsonify({'success': False, 'message': f'Erro interno: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = os.environ.get("PORT", 5000)  # Pega a porta da variável de ambiente, usa 5000 como padrão
+    app.run(debug=True, host='0.0.0.0', port=port) # Escuta em todas as interfaces e na porta especificada
