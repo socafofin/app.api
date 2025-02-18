@@ -1,26 +1,27 @@
 import os
-from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+import uuid
+from datetime import datetime
 
-app = Flask(__name__)
+db = SQLAlchemy()
 
-# ***MUITO IMPORTANTE: Substitua esta URL pela sua URL de banco de dados REAL***
-SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or 'postgresql://spoofer_db_user:2AEikVNcLBxCEkFU1152uSSzX4Nj7Na4@dpg-cuoi7s52ng1s73e9j6p0-a.frankfurt-postgres.render.com/spoofer_db'
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(128), nullable=False)
+    keys = db.relationship('Key', backref='user')
 
-app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# Configuração SSL para PostgreSQL (Render.com requer conexões seguras)
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "connect_args": {
-        "sslmode": "require"
-    }
-}
-
-db = SQLAlchemy(app)
+    def __init__(self, username, password):
+        self.username = username
+        self.password = password  # Lembre-se de hashear a senha AQUI
 
 class Key(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(50), unique=True, nullable=False)
     hwid = db.Column(db.String(255), nullable=True)
     expiration_time = db.Column(db.DateTime, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+    @staticmethod
+    def generate_key():
+        return str(uuid.uuid4())

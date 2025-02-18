@@ -3,3 +3,11 @@
  * Running on http://127.0.0.1:5000
  * Running on http://192.168.42.217:5000
 2025-02-18 06:24:43,446 - INFO - [33mPress CTRL+C to quit[0m
+2025-02-18 18:17:20,889 - ERROR - Error: Path doesn't exist: 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\migrations'.  Please use the 'init' command to create a new scripts folder.
+2025-02-18 18:18:49,584 - ERROR - Error: Path doesn't exist: 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\migrations'.  Please use the 'init' command to create a new scripts folder.
+2025-02-18 18:20:07,594 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-02-18 18:20:07,595 - INFO - [33mPress CTRL+C to quit[0m
+2025-02-18 18:20:07,597 - INFO -  * Restarting with stat
+2025-02-18 18:20:08,479 - WARNING -  * Debugger is active!
+2025-02-18 18:20:08,483 - INFO -  * Debugger PIN: 742-408-417
