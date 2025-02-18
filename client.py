@@ -43,7 +43,6 @@ def obter_identificadores_hardware():
 # Funções para comunicação com o servidor
 def ativar_chave_com_servidor(key, hwid):
     try:
-        # Usar POST em vez de GET
         response = requests.post(f"{SERVER_URL}/ativar", json={"key": key, "hwid": hwid})
         data = response.json()
         return data["success"], data["message"]
@@ -53,7 +52,6 @@ def ativar_chave_com_servidor(key, hwid):
 
 def validar_chave_com_servidor(key, hwid):
     try:
-        # Usar POST em vez de GET
         response = requests.post(f"{SERVER_URL}/validar", json={"key": key, "hwid": hwid})
         data = response.json()
         return data["success"], data["message"]
@@ -350,6 +348,10 @@ class InfoManager:
 
 # Iniciar Aplicação
 if __name__ == "__main__":
+    # Verifica se o código está rodando no Render
+    if not os.environ.get('RENDER'):
+        raise RuntimeError("Este servidor só pode ser executado no Render.")
+
     root = tk.Tk()
     app = SpooferApp(root)
     root.mainloop()
