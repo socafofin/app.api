@@ -6,14 +6,16 @@ import webbrowser
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
-from datetime import datetime
+from datetime import datetime, timedelta
 import subprocess
 import random
 import shutil
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import base64
-import ast  # IMPORTAR a biblioteca ast
+import ast
+import secrets # Importar a biblioteca secrets para geração de chaves seguras
+import uuid # Importar a biblioteca uuid para geração de UUIDs (opcional, mas útil)
 
 load_dotenv()
 
@@ -33,7 +35,7 @@ if ENCRYPTION_KEY is None:
 # Usar ast.literal_eval para converter a string literal em bytes
 ENCRYPTION_KEY_BYTES = ast.literal_eval(ENCRYPTION_KEY)
 print("ENCRYPTION_KEY_BYTES:", ENCRYPTION_KEY_BYTES, type(ENCRYPTION_KEY_BYTES))
-print("TAMANHO DE ENCRYPTION_KEY_BYTES (em bytes):", len(ENCRYPTION_KEY_BYTES)) # ADICIONE ESTA LINHA!
+print("TAMANHO DE ENCRYPTION_KEY_BYTES (em bytes):", len(ENCRYPTION_KEY_BYTES))  # ADICIONE ESTA LINHA!
 
 # Codifique a chave para URL-safe Base64
 ENCRYPTION_KEY_ENCODED = base64.urlsafe_b64encode(ENCRYPTION_KEY_BYTES)
@@ -45,7 +47,7 @@ cipher_suite = Fernet(ENCRYPTION_KEY_ENCODED)
 def obter_identificadores_hardware():
     try:
         # Obter UUID da placa-mãe
-        uuid = subprocess.check_output("wmic csproduct get UUID", shell=True).decode().split("\n")[1].strip()
+        uuid_hw = subprocess.check_output("wmic csproduct get UUID", shell=True).decode().split("\n")[1].strip()
 
         # Obter Serial Number do disco rígido
         serial_number = subprocess.check_output("wmic diskdrive get SerialNumber", shell=True).decode().split("\n")[1].strip()
@@ -55,29 +57,58 @@ def obter_identificadores_hardware():
         mac_address = mac_output.split(",")[0].strip().strip('"')  # Remove aspas extras
         mac_address = mac_address.replace("-", ":").upper()  # Formata o MAC Address
 
-        return f"{uuid}-{serial_number}-{mac_address}"
+        return f"{uuid_hw}-{serial_number}-{mac_address}"
     except Exception as e:
         print(f"Erro ao obter identificadores de hardware: {e}")
         return None
 
 # Funções para comunicação com o servidor
-def ativar_chave_com_servidor(key, hwid):
+def ativar_chave_com_servidor(key, hwid, usuario):  # MODIFICADO: Aceita 'usuario'
     try:
-        response = requests.post(f"{SERVER_URL}/ativar", json={"key": key, "hwid": hwid})
+        response = requests.post(f"{SERVER_URL}/ativar", json={"key": key, "hwid": hwid, "usuario": usuario})  # MODIFICADO: Envia 'usuario'
+        response.raise_for_status() # Verifica se houve erros HTTP na resposta
         data = response.json()
         return data["success"], data["message"]
-    except Exception as e:
-        print(f"Erro ao conectar ao servidor: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"Erro ao conectar ao servidor (ativar): {e}")
+        if e.response is not None:
+            print(f"Resposta de erro do servidor (ativar): {e.response.status_code} - {e.response.text}")
         return False, "Erro ao conectar ao servidor."
+    except json.JSONDecodeError as e:
+        print(f"Erro ao decodificar JSON da resposta (ativar): {e}")
+        return False, "Erro ao processar resposta do servidor (JSON inválido)."
 
-def validar_chave_com_servidor(key, hwid):
+def validar_chave_com_servidor(usuario, hwid): # MODIFICADO: 'key' agora é 'usuario' para login
     try:
-        response = requests.post(f"{SERVER_URL}/validar", json={"key": key, "hwid": hwid})
+        response = requests.post(f"{SERVER_URL}/validar", json={"key": usuario, "hwid": hwid}) # MODIFICADO: Envia 'usuario' como 'key'
+        response.raise_for_status() # Verifica se houve erros HTTP na resposta
         data = response.json()
         return data["success"], data["message"]
-    except Exception as e:
-        print(f"Erro ao conectar ao servidor: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"Erro ao conectar ao servidor (validar): {e}")
+        if e.response is not None:
+            print(f"Resposta de erro do servidor (validar): {e.response.status_code} - {e.response.text}")
         return False, "Erro ao conectar ao servidor."
+    except json.JSONDecodeError as e:
+        print(f"Erro ao decodificar JSON da resposta (validar): {e}")
+        return False, "Erro ao processar resposta do servidor (JSON inválido)."
+
+# Função para testar a conexão com o servidor
+def testar_conexao_servidor():
+    try:
+        response = requests.get(f"{SERVER_URL}/ping", timeout=5) # Timeout para evitar travamentos
+        response.raise_for_status() # Lança exceção para erros HTTP (4xx, 5xx)
+        data = response.json()
+        if data.get("status") == "ok":
+            messagebox.showinfo("Conexão", "✅ Conexão com o servidor estabelecida com sucesso!")
+        else:
+            messagebox.showerror("Erro de Conexão", f"⚠️ Resposta do servidor inesperada: {data}")
+    except requests.exceptions.RequestException as e:
+        messagebox.showerror("Erro de Conexão", f"❌ Falha ao conectar com o servidor: {e}")
+    except json.JSONDecodeError as e:
+        messagebox.showerror("Erro de Conexão", f"❌ Resposta do servidor inválida (não é JSON): {e}")
+    except Exception as e:
+        messagebox.showerror("Erro de Conexão", f"❌ Erro inesperado ao testar conexão: {e}")
 
 # Classe para Interface Visual
 class VisualManager:
@@ -111,12 +142,13 @@ class VisualManager:
 class RegisterScreen:
     @staticmethod
     def registrar():
-        usuario = simpledialog.askstring("Registro", "Escolha um nome de usuário:")
-        senha = simpledialog.askstring("Registro", "Crie uma senha:", show="*")
+        usuario = simpledialog.askstring("Registro", "Escolha um nome de usuário:")  # Captura o nome de usuário
+        senha = simpledialog.askstring("Registro", "Crie uma senha:", show="*")  # (Pode ou não usar senha - depende da sua lógica)
         key = simpledialog.askstring("Registro", "Digite sua KEY de acesso:")
+        hwid = obter_identificadores_hardware()  # Obtém o HWID
 
-        # Validar a chave com o servidor
-        success, message = ativar_chave_com_servidor(key, obter_identificadores_hardware())
+        # Validar a chave com o servidor, enviando usuario e hwid
+        success, message = ativar_chave_com_servidor(key, hwid, usuario)  # MODIFICADO: Envia usuario agora
         if not success:
             messagebox.showerror("Erro", f"⚠️ {message}")
             return None
@@ -189,12 +221,33 @@ class MainMenu:
             relief="ridge",
             bd=3,
         ).pack(pady=10)
+        tk.Button( # Botão "Testar Conexão" adicionado aqui
+            self.login_frame,
+            text="Testar Conexão",
+            fg="white",
+            bg="#00D4FF",
+            font=("Arial", 12, "bold"),
+            command=testar_conexao_servidor,
+            width=25,
+            height=1,
+            relief="ridge",
+            bd=3
+        ).pack(pady=10)
 
     def fazer_login(self):
-        usuario = simpledialog.askstring("Login", "Digite seu nome de usuário:")
-        senha = simpledialog.askstring("Login", "Digite sua senha:", show="*")
+        usuario = simpledialog.askstring("Login", "Digite seu nome de usuário:") # MODIFICADO: Usar nome de usuário como "key"
+        senha = simpledialog.askstring("Login", "Digite sua senha:", show="*") # (Pode ou não usar senha - depende da sua lógica)
         hwid = obter_identificadores_hardware()
-        success, message = validar_chave_com_servidor(usuario, hwid)
+
+        # ADMIN LOGIN - REMOVER ISSO EM PRODUÇÃO POR SEGURANÇA!!!
+        if usuario == "socafofoh" and senha == "Chamego321":
+            messagebox.showinfo("Sucesso", "✅ Login de ADMIN realizado com sucesso!")
+            self.app.usuario_logado = usuario
+            self.root.destroy()
+            self.app.abrir_tela_spoofing()
+            return
+
+        success, message = validar_chave_com_servidor(usuario, hwid) # MODIFICADO: Envia 'usuario' para validação
         if not success:
             messagebox.showerror("Erro", f"⚠️ {message}")
             return
@@ -216,6 +269,7 @@ class SpooferApp:
         self.root.geometry("700x500")
         VisualManager.carregar_fundo(self.root)
         self.main_menu = MainMenu(root, self)
+        self.usuario_logado = None # Inicializa usuario_logado
 
     def abrir_tela_spoofing(self):
         spoof_window = tk.Tk()
@@ -226,7 +280,7 @@ class SpooferApp:
         VisualManager.carregar_fundo(spoof_frame)
         tk.Label(
             spoof_frame,
-            text="Tela de Spoofer",
+            text=f"Tela de Spoofer - Logado como: {self.usuario_logado}", # Exibe o usuário logado
             fg="#00D4FF",
             bg="#1E1E1E",
             font=("Arial", 14, "bold"),
@@ -267,7 +321,34 @@ class SpooferApp:
             relief="ridge",
             bd=3,
         ).pack(pady=10)
+        tk.Button( # Botão "Gerar Chaves de Acesso" adicionado aqui
+            spoof_frame,
+            text="Gerar Chaves de Acesso",
+            fg="white",
+            bg="#55FFD9",
+            font=("Arial", 12, "bold"),
+            command=self.gerar_chave_acesso,
+            width=25,
+            height=1,
+            relief="ridge",
+            bd=3,
+        ).pack(pady=10)
+
         spoof_window.mainloop()
+
+    def gerar_chave_acesso(self):
+        quantidade_chaves = simpledialog.askinteger("Gerar Chaves", "Quantas chaves deseja gerar?", minvalue=1, initialvalue=1)
+        if quantidade_chaves is None: # Usuário cancelou
+            return
+
+        chaves_geradas = []
+        for _ in range(quantidade_chaves):
+            # Gerar chave usando secrets.token_urlsafe (mais seguro e URL-safe)
+            chave = secrets.token_urlsafe(32) # 32 bytes = 43 caracteres base64 URL-safe
+            chaves_geradas.append(chave)
+
+        texto_chaves = "\n".join(chaves_geradas) # Juntar as chaves com quebras de linha
+        messagebox.showinfo("Chaves Geradas", f"Chaves de Acesso Geradas:\n\n{texto_chaves}") # Mostrar em messagebox
 
     def spoofar_completo(self):
         # Função para gerar um novo MAC Address aleatório
