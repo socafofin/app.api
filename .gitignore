@@ -1,0 +1,5 @@
+.env
+__pycache__/
+*.log
+migrations/versions/*  # Se você não quiser enviar as versões das migrações
+venv/  # Se você estiver usando um ambiente virtual
