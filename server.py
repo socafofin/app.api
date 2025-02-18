@@ -20,7 +20,6 @@ DATABASE_URL = os.environ.get("DATABASE_URL")  # Recupera o valor
 if not DATABASE_URL:  # Verificação *essencial*
     raise ValueError("A variável DATABASE_URL não está definida no .env")
 
-
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -33,6 +32,10 @@ migrate = Migrate(app, db)  # Inicialize o Migrate com o app e o db
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"message": "Servidor está funcionando!"}), 200
+
+@app.route('/ping', methods=['GET'])  # <----  Endpoint /ping Adicionado
+def ping():
+    return jsonify({"status": "ok"}), 200
 
 @app.route('/generate_key', methods=['POST'])
 def generate_key():
@@ -94,7 +97,7 @@ def register():
         logging.error(f"Erro ao registrar usuário: {e}", exc_info=True)  # Log completo do erro
         return jsonify({'success': False, 'message': f'Erro interno: {str(e)}'}), 500
 
-@app.route('/validate_key', methods=['POST'])
+@app.route('/validate_key', methods=['POST']) # <---- Rota /validate_key corrigida
 def validate_key():
     try:
         data = request.get_json()
