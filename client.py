@@ -11,6 +11,11 @@ import subprocess
 import random
 import shutil
 from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+import base64
+import ast  # IMPORTAR a biblioteca ast
+
+load_dotenv()
 
 # Configurações (usando variáveis de ambiente):
 SERVER_URL = os.environ.get("SERVER_URL") or "https://spoofer-db.onrender.com"
@@ -20,11 +25,20 @@ BACKGROUND_PATH = os.environ.get("BACKGROUND_PATH") or "background.png"
 
 # Chave de criptografia (lida da variável de ambiente)
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
+print("ENCRYPTION_KEY (lido do .env):", ENCRYPTION_KEY, type(ENCRYPTION_KEY))
 
 if ENCRYPTION_KEY is None:
     raise ValueError("A variável de ambiente ENCRYPTION_KEY não está definida.")
 
-ENCRYPTION_KEY_ENCODED = ENCRYPTION_KEY.encode()
+# Usar ast.literal_eval para converter a string literal em bytes
+ENCRYPTION_KEY_BYTES = ast.literal_eval(ENCRYPTION_KEY)
+print("ENCRYPTION_KEY_BYTES:", ENCRYPTION_KEY_BYTES, type(ENCRYPTION_KEY_BYTES))
+print("TAMANHO DE ENCRYPTION_KEY_BYTES (em bytes):", len(ENCRYPTION_KEY_BYTES)) # ADICIONE ESTA LINHA!
+
+# Codifique a chave para URL-safe Base64
+ENCRYPTION_KEY_ENCODED = base64.urlsafe_b64encode(ENCRYPTION_KEY_BYTES)
+print("ENCRYPTION_KEY_ENCODED:", ENCRYPTION_KEY_ENCODED, type(ENCRYPTION_KEY_ENCODED))
+
 cipher_suite = Fernet(ENCRYPTION_KEY_ENCODED)
 
 # Função para obter identificadores únicos do hardware (HWID)
@@ -318,8 +332,8 @@ class SpooferApp:
                 else:  # Executado se o loop terminar sem obter o IP
                     raise Exception("Não foi possível obter o IP externo usando nenhuma API.")
 
-                # ... (resto da lógica para mudar o IP, como antes)
-
+                # ... (resto da lógica para mudar o IP, como antes - você pode adicionar aqui se necessário)
+                messagebox.showinfo("Sucesso", f"✅ Tentativa de mudar o IP realizada! (Verifique seu IP)") # Mensagem genérica, você pode refinar
             except Exception as e:
                 messagebox.showerror("Erro", f"❌ Falha ao mudar IP: {e}")
 

@@ -11,3 +11,52 @@
 2025-02-18 18:20:07,597 - INFO -  * Restarting with stat
 2025-02-18 18:20:08,479 - WARNING -  * Debugger is active!
 2025-02-18 18:20:08,483 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 18:50:40,159 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.42.217:5000
+2025-02-18 18:50:40,160 - INFO - [33mPress CTRL+C to quit[0m
+2025-02-18 18:50:40,161 - INFO -  * Restarting with stat
+2025-02-18 18:50:41,062 - WARNING -  * Debugger is active!
+2025-02-18 18:50:41,067 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:01:42,693 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\gerador.py', reloading
+2025-02-18 19:01:42,801 - INFO -  * Restarting with stat
+2025-02-18 19:01:44,389 - WARNING -  * Debugger is active!
+2025-02-18 19:01:44,393 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:02:57,711 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\teste_leitura_env.py', reloading
+2025-02-18 19:02:57,821 - INFO -  * Restarting with stat
+2025-02-18 19:02:58,775 - WARNING -  * Debugger is active!
+2025-02-18 19:02:58,779 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:04:36,168 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\teste_leitura_env.py', reloading
+2025-02-18 19:04:36,264 - INFO -  * Restarting with stat
+2025-02-18 19:04:37,222 - WARNING -  * Debugger is active!
+2025-02-18 19:04:37,227 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:17:11,342 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\client.py', reloading
+2025-02-18 19:17:11,473 - INFO -  * Restarting with stat
+2025-02-18 19:17:12,480 - WARNING -  * Debugger is active!
+2025-02-18 19:17:12,485 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:29:55,667 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\client.py', reloading
+2025-02-18 19:29:55,778 - INFO -  * Restarting with stat
+2025-02-18 19:29:56,749 - WARNING -  * Debugger is active!
+2025-02-18 19:29:56,754 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:36:58,388 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\client.py', reloading
+2025-02-18 19:36:58,498 - INFO -  * Restarting with stat
+2025-02-18 19:36:59,464 - WARNING -  * Debugger is active!
+2025-02-18 19:36:59,469 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:37:15,544 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\client.py', reloading
+2025-02-18 19:37:15,639 - INFO -  * Restarting with stat
+2025-02-18 19:37:16,539 - WARNING -  * Debugger is active!
+2025-02-18 19:37:16,543 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:38:12,773 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\teste_leitura_env.py', reloading
+2025-02-18 19:38:12,868 - INFO -  * Restarting with stat
+2025-02-18 19:38:13,813 - WARNING -  * Debugger is active!
+2025-02-18 19:38:13,817 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:43:07,935 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\client.py', reloading
+2025-02-18 19:43:08,036 - INFO -  * Restarting with stat
+2025-02-18 19:43:09,060 - WARNING -  * Debugger is active!
+2025-02-18 19:43:09,065 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:47:12,013 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\client.py', reloading
+2025-02-18 19:47:12,112 - INFO -  * Restarting with stat
+2025-02-18 19:47:13,119 - WARNING -  * Debugger is active!
+2025-02-18 19:47:13,125 - INFO -  * Debugger PIN: 742-408-417
+2025-02-18 19:48:52,529 - INFO -  * Detected change in 'C:\\Users\\fivem\\MILGRAU\\MG-SPOOFER\\client.py', reloading
