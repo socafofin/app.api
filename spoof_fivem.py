@@ -35,9 +35,12 @@ def obter_identificadores_hardware():
         # Obter MAC Address
         mac_output = subprocess.check_output("getmac /fo csv /nh", shell=True).decode()
         mac_address_raw = mac_output.split(",")[0].strip().strip('"')  # Remove aspas e espaços extras
-        mac_address_clean = mac_address_raw.replace("-", ":")  # Substitui hífens por dois-pontos
+        mac_address = mac_address_raw.replace("-", "")  # Remove os traços
 
-        return f"{uuid}-{serial_number}-{mac_address_clean}"
+        # Converter o MAC Address para o formato desejado
+        formatted_mac = ":".join([mac_address[i:i+2] for i in range(0, len(mac_address), 2)])
+
+        return f"{uuid}-{serial_number}-{formatted_mac}"
     except Exception as e:
         print(f"Erro ao obter identificadores de hardware: {e}")
         return None

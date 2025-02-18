@@ -1,20 +1,18 @@
-# client.py
 import os
 import json
 import time
 import requests
 import webbrowser
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
 from datetime import datetime
-import shutil
 import subprocess
 import random
 from cryptography.fernet import Fernet
 
 # Configurações
-SERVER_URL = "https://spoofer-api.onrender.com"  # Substitua pelo seu endpoint no Render
+SERVER_URL = "https://spoofer-db.onrender.com"  # Substitua pelo seu endpoint no Render
 DISCORD_LINK = "https://discord.gg/9Z5m4zk9"
 LOGO_PATH = "logo.png"
 BACKGROUND_PATH = "background.png"
@@ -28,10 +26,15 @@ def obter_identificadores_hardware():
     try:
         # Obter UUID da placa-mãe
         uuid = subprocess.check_output("wmic csproduct get UUID", shell=True).decode().split("\n")[1].strip()
+
         # Obter Serial Number do disco rígido
         serial_number = subprocess.check_output("wmic diskdrive get SerialNumber", shell=True).decode().split("\n")[1].strip()
+
         # Obter MAC Address
-        mac_address = ":".join(["{:02x}".format((int(subprocess.check_output("getmac /fo csv /nh", shell=True).decode().split(",")[0].strip()[2:], 16) >> i) & 0xff) for i in range(0, 48, 8)][::-1])
+        mac_output = subprocess.check_output("getmac /fo csv /nh", shell=True).decode()
+        mac_address = mac_output.split(",")[0].strip().strip('"')  # Remove aspas extras
+        mac_address = mac_address.replace("-", ":").upper()  # Formata o MAC Address
+
         return f"{uuid}-{serial_number}-{mac_address}"
     except Exception as e:
         print(f"Erro ao obter identificadores de hardware: {e}")
@@ -40,32 +43,17 @@ def obter_identificadores_hardware():
 # Funções para comunicação com o servidor
 def ativar_chave_com_servidor(key, hwid):
     try:
+        # Usar POST em vez de GET
         response = requests.post(f"{SERVER_URL}/ativar", json={"key": key, "hwid": hwid})
-        print("Resposta do servidor:", response.text)  # Log da resposta
-        if response.status_code == 200:
-            data = response.json()
-            return data["success"], data["message"]
-        else:
-            return False, f"Erro no servidor: {response.status_code}"
+        data = response.json()
+        return data["success"], data["message"]
     except Exception as e:
         print(f"Erro ao conectar ao servidor: {e}")
         return False, "Erro ao conectar ao servidor."
 
 def validar_chave_com_servidor(key, hwid):
     try:
-        response = requests.post(f"{SERVER_URL}/validar", json={"key": key, "hwid": hwid})
-        print("Resposta do servidor:", response.text)  # Log da resposta
-        if response.status_code == 200:
-            data = response.json()
-            return data["success"], data["message"]
-        else:
-            return False, f"Erro no servidor: {response.status_code}"
-    except Exception as e:
-        print(f"Erro ao conectar ao servidor: {e}")
-        return False, "Erro ao conectar ao servidor."
-
-def validar_chave_com_servidor(key, hwid):
-    try:
+        # Usar POST em vez de GET
         response = requests.post(f"{SERVER_URL}/validar", json={"key": key, "hwid": hwid})
         data = response.json()
         return data["success"], data["message"]
@@ -137,14 +125,10 @@ class MainMenu:
         self.tela_login()
 
     def tela_login(self):
-        # Cria o frame principal
         self.login_frame = tk.Frame(self.root, bg="#1E1E1E")
         self.login_frame.pack(fill="both", expand=True)
-        # Carrega o fundo
         VisualManager.carregar_fundo(self.login_frame)
-        # Adiciona a logo (apenas uma vez)
         VisualManager.carregar_logo(self.login_frame)
-        # Título do sistema
         tk.Label(
             self.login_frame,
             text="MILGRAU SHOP - SPOOFER 1 CLICK",
@@ -152,7 +136,6 @@ class MainMenu:
             bg="#1E1E1E",
             font=("Arial", 14, "bold"),
         ).pack(pady=10)
-        # Botão de Login
         tk.Button(
             self.login_frame,
             text="🔑 Login",
@@ -165,9 +148,7 @@ class MainMenu:
             relief="ridge",
             bd=3,
         ).pack(pady=10)
-        # Botão de Registro
         RegisterButton(self.login_frame, self.fazer_registro)
-        # Botão de Suporte no Discord
         tk.Button(
             self.login_frame,
             text="💬 Suporte no Discord",
@@ -184,16 +165,13 @@ class MainMenu:
     def fazer_login(self):
         usuario = simpledialog.askstring("Login", "Digite seu nome de usuário:")
         senha = simpledialog.askstring("Login", "Digite sua senha:", show="*")
-
-        # Validação local de usuário e senha (opcional)
         success, message = validar_chave_com_servidor(usuario, obter_identificadores_hardware())
         if not success:
             messagebox.showerror("Erro", f"⚠️ {message}")
             return
-
         messagebox.showinfo("Sucesso", "✅ Login realizado com sucesso!")
         self.app.usuario_logado = usuario
-        self.root.destroy()  # Fecha a janela principal
+        self.root.destroy()
         self.app.abrir_tela_spoofing()
 
     def fazer_registro(self):
