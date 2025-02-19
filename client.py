@@ -21,26 +21,22 @@ load_dotenv()
 
 # Configurações (usando variáveis de ambiente):
 # SERVER_URL CORRIGIDO: Agora DEVE ser o endereço HTTP/HTTPS do SEU SERVIDOR WEB no Render.com!
-SERVER_URL = os.environ.get("SERVER_URL") or "http://localhost:5000"  # <--- VALOR PADRÃO PARA TESTES LOCAIS! ALTERE PARA "https://seu-app.onrender.com" EM PRODUÇÃO!
+SERVER_URL = os.environ.get("SERVER_URL") or "https://spoofer-db.onrender.com"  # <--- **VERIFIQUE SE ESTE É O URL CORRETO DO SEU SERVIDOR NO RENDER.COM!**
 DISCORD_LINK = os.environ.get("DISCORD_LINK") or "https://discord.gg/9Z5m4zk9"
 LOGO_PATH = os.environ.get("LOGO_PATH") or "logo.png"
 BACKGROUND_PATH = os.environ.get("BACKGROUND_PATH") or "background.png"
 
 # Chave de criptografia (lida da variável de ambiente)
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
-print("ENCRYPTION_KEY (lido do .env):", ENCRYPTION_KEY, type(ENCRYPTION_KEY))
 
 if ENCRYPTION_KEY is None:
     raise ValueError("A variável de ambiente ENCRYPTION_KEY não está definida.")
 
 # Usar ast.literal_eval para converter a string literal em bytes
 ENCRYPTION_KEY_BYTES = ast.literal_eval(ENCRYPTION_KEY)
-print("ENCRYPTION_KEY_BYTES:", ENCRYPTION_KEY_BYTES, type(ENCRYPTION_KEY_BYTES))
-print("TAMANHO DE ENCRYPTION_KEY_BYTES (em bytes):", len(ENCRYPTION_KEY_BYTES))  # ADICIONE ESTA LINHA!
 
 # Codifique a chave para URL-safe Base64
 ENCRYPTION_KEY_ENCODED = base64.urlsafe_b64encode(ENCRYPTION_KEY_BYTES)
-print("ENCRYPTION_KEY_ENCODED:", ENCRYPTION_KEY_ENCODED, type(ENCRYPTION_KEY_ENCODED))
 
 cipher_suite = Fernet(ENCRYPTION_KEY_ENCODED)
 
@@ -334,7 +330,7 @@ class SpooferApp:
             fg="white",
             bg="#55FFD9",
             font=("Arial", 12, "bold"),
-            command=self.gerar_chave_acesso,
+            command=self.requisitar_chaves_servidor, # <--- FUNÇÃO MODIFICADA!
             width=25,
             height=1,
             relief="ridge",
@@ -343,19 +339,34 @@ class SpooferApp:
 
         spoof_window.mainloop()
 
-    def gerar_chave_acesso(self):
+    def requisitar_chaves_servidor(self): # FUNÇÃO MODIFICADA! REQUISITA CHAVES DO SERVIDOR!
         quantidade_chaves = simpledialog.askinteger("Gerar Chaves", "Quantas chaves deseja gerar?", minvalue=1, initialvalue=1)
         if quantidade_chaves is None:  # Usuário cancelou
             return
 
-        chaves_geradas = []
-        for _ in range(quantidade_chaves):
-            # Gerar chave usando secrets.token_urlsafe (mais seguro e URL-safe)
-            chave = secrets.token_urlsafe(32)  # 32 bytes = 43 caracteres base64 URL-safe
-            chaves_geradas.append(chave)
+        duracao_dias = simpledialog.askinteger("Duração da Chave", "Duração em dias para cada chave?", minvalue=1, initialvalue=30) # Padrão 30 dias
+        if duracao_dias is None:  # Usuário cancelou
+            return
 
-        texto_chaves = "\n".join(chaves_geradas)  # Juntar as chaves com quebras de linha
-        messagebox.showinfo("Chaves Geradas", f"Chaves de Acesso Geradas:\n\n{texto_chaves}")  # Mostrar em messagebox
+        try:
+            # FAZ REQUISIÇÃO POST PARA O ENDPOINT /generate_keys NO SERVIDOR
+            response = requests.post(f"{SERVER_URL}/generate_keys", json={"quantidade": quantidade_chaves, "duracao_dias": duracao_dias})  # <--- ENVIA QUANTIDADE E DURACAO PARA O SERVIDOR!
+            response.raise_for_status()  # Verifica erros HTTP
+            data = response.json()
+            if data["success"]:
+                chaves_geradas_info = data["chaves"]  # Recebe lista de dicionários com chave e expiração
+                texto_chaves = ""
+                for chave_info in chaves_geradas_info:  # Formata as chaves com info de expiração (opcional)
+                    texto_chaves += f"Chave: {chave_info['chave']}, Expira em: {chave_info['expira_em']}\n"  # <--- EXIBINDO EXPIRAÇÃO (OPCIONAL)
+                messagebox.showinfo("Chaves Geradas", f"Chaves de Acesso Geradas:\n\n{texto_chaves}")
+            else:
+                messagebox.showerror("Erro ao Gerar Chaves", f"Erro do servidor: {data['message']}")
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Erro ao Gerar Chaves", f"Falha ao comunicar com o servidor para gerar chaves: {e}")
+        except json.JSONDecodeError as e:
+            messagebox.showerror("Erro ao Gerar Chaves", f"Resposta do servidor inválida (não é JSON): {e}")
+        except Exception as e:
+            messagebox.showerror("Erro ao Gerar Chaves", f"Erro inesperado ao gerar chaves: {e}")
 
     def spoofar_completo(self):
         # Função para gerar um novo MAC Address aleatório
