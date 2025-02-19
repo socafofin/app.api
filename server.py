@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuração do log
-logging.basicConfig(filename='server.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-                    format='%(asctime)s - %(levelname)s - %(message)s'
+logging.basicConfig(filename='server.log', level=logging.DEBUG, # <--- Nível DEBUG para logs mais detalhadas (pode mudar para INFO depois)
+                    format='%(asctime)s - %(levelname)s - %(message)s') # <--- LINHA CORRIGIDA: SEM INDENTAÇÃO NO INÍCIO
 
 # Variáveis de ambiente
 DATABASE_URL = os.environ.get("DATABASE_URL")  # Recupera o valor
@@ -35,6 +35,7 @@ def home():
 
 @app.route('/ping', methods=['GET'])  # <----  Endpoint /ping Adicionado
 def ping():
+    app.logger.info("Rota /ping foi acessada!")  # <---- Linha de log dentro do /ping
     return jsonify({"status": "ok"}), 200
 
 @app.route('/generate_key', methods=['POST'])
