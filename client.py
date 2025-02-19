@@ -14,13 +14,14 @@ from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import base64
 import ast
-import secrets # Importar a biblioteca secrets para geração de chaves seguras
-import uuid # Importar a biblioteca uuid para geração de UUIDs (opcional, mas útil)
+import secrets  # Importar a biblioteca secrets para geração de chaves seguras
+import uuid  # Importar a biblioteca uuid para geração de UUIDs (opcional, mas útil)
 
 load_dotenv()
 
 # Configurações (usando variáveis de ambiente):
-SERVER_URL = os.environ.get("SERVER_URL") or "postgresql://spoofer_db_user:2AEikVNcLBxCEkFU1152uSSzX4Nj7Na4@dpg-cuoi7s52ng1s73e9j6p0-a.frankfurt-postgres.render.com/spoofer_db"
+# SERVER_URL CORRIGIDO: Agora DEVE ser o endereço HTTP/HTTPS do SEU SERVIDOR WEB no Render.com!
+SERVER_URL = os.environ.get("SERVER_URL") or "http://localhost:5000"  # <--- VALOR PADRÃO PARA TESTES LOCAIS! ALTERE PARA "https://seu-app.onrender.com" EM PRODUÇÃO!
 DISCORD_LINK = os.environ.get("DISCORD_LINK") or "https://discord.gg/9Z5m4zk9"
 LOGO_PATH = os.environ.get("LOGO_PATH") or "logo.png"
 BACKGROUND_PATH = os.environ.get("BACKGROUND_PATH") or "background.png"
@@ -62,53 +63,59 @@ def obter_identificadores_hardware():
         print(f"Erro ao obter identificadores de hardware: {e}")
         return None
 
-# Funções para comunicação com o servidor
+# Funções para comunicação com o servidor (CORRIGIDAS para usar SERVER_URL HTTP!)
 def ativar_chave_com_servidor(key, hwid, usuario):  # MODIFICADO: Aceita 'usuario'
     try:
-        response = requests.post(f"{SERVER_URL}/ativar", json={"key": key, "hwid": hwid, "usuario": usuario})  # MODIFICADO: Envia 'usuario'
-        response.raise_for_status() # Verifica se houve erros HTTP na resposta
+        # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /register
+        response = requests.post(f"{SERVER_URL}/register", json={"key": key, "hwid": hwid, "username": usuario})  # MODIFICADO: Envia 'usuario' como 'username'
+        response.raise_for_status()  # Verifica se houve erros HTTP na resposta
         data = response.json()
         return data["success"], data["message"]
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar ao servidor (ativar): {e}")
+        print(f"Erro ao conectar ao servidor (ativar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
         if e.response is not None:
-            print(f"Resposta de erro do servidor (ativar): {e.response.status_code} - {e.response.text}")
-        return False, "Erro ao conectar ao servidor."
+            print(f"Resposta de erro do servidor (ativar_chave_com_servidor): {e.response.status_code} - {e.response.text}")
+        return False, "Erro ao conectar ao servidor para registro." # Mensagem de erro mais clara
     except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da resposta (ativar): {e}")
-        return False, "Erro ao processar resposta do servidor (JSON inválido)."
+        print(f"Erro ao decodificar JSON da resposta (ativar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
+        return False, "Erro ao processar resposta do servidor (JSON inválido no registro)." # Mensagem de erro mais clara
 
-def validar_chave_com_servidor(usuario, hwid): # MODIFICADO: 'key' agora é 'usuario' para login
+def validar_chave_com_servidor(usuario, hwid):  # MODIFICADO: 'key' agora é 'usuario' para login
     try:
-        response = requests.post(f"{SERVER_URL}/validar", json={"key": usuario, "hwid": hwid}) # MODIFICADO: Envia 'usuario' como 'key'
-        response.raise_for_status() # Verifica se houve erros HTTP na resposta
+        # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /validate_key (corrigido no server.py)
+        response = requests.post(f"{SERVER_URL}/validate_key", json={"key": usuario, "hwid": hwid})  # MODIFICADO: Envia 'usuario' como 'key'
+        response.raise_for_status()  # Verifica se houve erros HTTP na resposta
         data = response.json()
         return data["success"], data["message"]
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar ao servidor (validar): {e}")
+        print(f"Erro ao conectar ao servidor (validar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
         if e.response is not None:
-            print(f"Resposta de erro do servidor (validar): {e.response.status_code} - {e.response.text}")
-        return False, "Erro ao conectar ao servidor."
+            print(f"Resposta de erro do servidor (validar_chave_com_servidor): {e.response.status_code} - {e.response.text}")
+        return False, "Erro ao conectar ao servidor para login." # Mensagem de erro mais clara
     except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da resposta (validar): {e}")
-        return False, "Erro ao processar resposta do servidor (JSON inválido)."
+        print(f"Erro ao decodificar JSON da resposta (validar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
+        return False, "Erro ao processar resposta do servidor (JSON inválido no login)." # Mensagem de erro mais clara
 
-# Função para testar a conexão com o servidor
+# Função para testar a conexão com o servidor (CORRIGIDA para usar SERVER_URL HTTP!)
 def testar_conexao_servidor():
     try:
-        response = requests.get(f"{SERVER_URL}/ping", timeout=5) # Timeout para evitar travamentos
-        response.raise_for_status() # Lança exceção para erros HTTP (4xx, 5xx)
+        # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /ping
+        response = requests.get(f"{SERVER_URL}/ping", timeout=5)  # Timeout para evitar travamentos
+        response.raise_for_status()  # Lança exceção para erros HTTP (4xx, 5xx)
         data = response.json()
         if data.get("status") == "ok":
             messagebox.showinfo("Conexão", "✅ Conexão com o servidor estabelecida com sucesso!")
         else:
             messagebox.showerror("Erro de Conexão", f"⚠️ Resposta do servidor inesperada: {data}")
     except requests.exceptions.RequestException as e:
-        messagebox.showerror("Erro de Conexão", f"❌ Falha ao conectar com o servidor: {e}")
+        messagebox.showerror("Erro de Conexão", f"❌ Falha ao conectar com o servidor: {e}") # Mensagem de erro mais clara
+        print(f"Erro detalhado ao testar_conexao_servidor: {e}") # Log detalhado para debugging
     except json.JSONDecodeError as e:
-        messagebox.showerror("Erro de Conexão", f"❌ Resposta do servidor inválida (não é JSON): {e}")
+        messagebox.showerror("Erro de Conexão", f"❌ Resposta do servidor inválida (não é JSON): {e}") # Mensagem de erro mais clara
+        print(f"Erro JSON ao testar_conexao_servidor: {e}") # Log detalhado para debugging
     except Exception as e:
-        messagebox.showerror("Erro de Conexão", f"❌ Erro inesperado ao testar conexão: {e}")
+        messagebox.showerror("Erro de Conexão", f"❌ Erro inesperado ao testar conexão: {e}") # Mensagem de erro mais clara
+        print(f"Erro inesperado em testar_conexao_servidor: {e}") # Log detalhado para debugging
 
 # Classe para Interface Visual
 class VisualManager:
@@ -221,7 +228,7 @@ class MainMenu:
             relief="ridge",
             bd=3,
         ).pack(pady=10)
-        tk.Button( # Botão "Testar Conexão" adicionado aqui
+        tk.Button(  # Botão "Testar Conexão" adicionado aqui
             self.login_frame,
             text="Testar Conexão",
             fg="white",
@@ -235,8 +242,8 @@ class MainMenu:
         ).pack(pady=10)
 
     def fazer_login(self):
-        usuario = simpledialog.askstring("Login", "Digite seu nome de usuário:") # MODIFICADO: Usar nome de usuário como "key"
-        senha = simpledialog.askstring("Login", "Digite sua senha:", show="*") # (Pode ou não usar senha - depende da sua lógica)
+        usuario = simpledialog.askstring("Login", "Digite seu nome de usuário:")  # MODIFICADO: Usar nome de usuário como "key"
+        senha = simpledialog.askstring("Login", "Digite sua senha:", show="*")  # (Pode ou não usar senha - depende da sua lógica)
         hwid = obter_identificadores_hardware()
 
         # ADMIN LOGIN - REMOVER ISSO EM PRODUÇÃO POR SEGURANÇA!!!
@@ -247,7 +254,7 @@ class MainMenu:
             self.app.abrir_tela_spoofing()
             return
 
-        success, message = validar_chave_com_servidor(usuario, hwid) # MODIFICADO: Envia 'usuario' para validação
+        success, message = validar_chave_com_servidor(usuario, hwid)  # MODIFICADO: Envia 'usuario' para validação
         if not success:
             messagebox.showerror("Erro", f"⚠️ {message}")
             return
@@ -269,7 +276,7 @@ class SpooferApp:
         self.root.geometry("700x500")
         VisualManager.carregar_fundo(self.root)
         self.main_menu = MainMenu(root, self)
-        self.usuario_logado = None # Inicializa usuario_logado
+        self.usuario_logado = None  # Inicializa usuario_logado
 
     def abrir_tela_spoofing(self):
         spoof_window = tk.Tk()
@@ -280,7 +287,7 @@ class SpooferApp:
         VisualManager.carregar_fundo(spoof_frame)
         tk.Label(
             spoof_frame,
-            text=f"Tela de Spoofer - Logado como: {self.usuario_logado}", # Exibe o usuário logado
+            text=f"Tela de Spoofer - Logado como: {self.usuario_logado}",  # Exibe o usuário logado
             fg="#00D4FF",
             bg="#1E1E1E",
             font=("Arial", 14, "bold"),
@@ -321,7 +328,7 @@ class SpooferApp:
             relief="ridge",
             bd=3,
         ).pack(pady=10)
-        tk.Button( # Botão "Gerar Chaves de Acesso" adicionado aqui
+        tk.Button(  # Botão "Gerar Chaves de Acesso" adicionado aqui
             spoof_frame,
             text="Gerar Chaves de Acesso",
             fg="white",
@@ -338,17 +345,17 @@ class SpooferApp:
 
     def gerar_chave_acesso(self):
         quantidade_chaves = simpledialog.askinteger("Gerar Chaves", "Quantas chaves deseja gerar?", minvalue=1, initialvalue=1)
-        if quantidade_chaves is None: # Usuário cancelou
+        if quantidade_chaves is None:  # Usuário cancelou
             return
 
         chaves_geradas = []
         for _ in range(quantidade_chaves):
             # Gerar chave usando secrets.token_urlsafe (mais seguro e URL-safe)
-            chave = secrets.token_urlsafe(32) # 32 bytes = 43 caracteres base64 URL-safe
+            chave = secrets.token_urlsafe(32)  # 32 bytes = 43 caracteres base64 URL-safe
             chaves_geradas.append(chave)
 
-        texto_chaves = "\n".join(chaves_geradas) # Juntar as chaves com quebras de linha
-        messagebox.showinfo("Chaves Geradas", f"Chaves de Acesso Geradas:\n\n{texto_chaves}") # Mostrar em messagebox
+        texto_chaves = "\n".join(chaves_geradas)  # Juntar as chaves com quebras de linha
+        messagebox.showinfo("Chaves Geradas", f"Chaves de Acesso Geradas:\n\n{texto_chaves}")  # Mostrar em messagebox
 
     def spoofar_completo(self):
         # Função para gerar um novo MAC Address aleatório
@@ -414,7 +421,7 @@ class SpooferApp:
                     raise Exception("Não foi possível obter o IP externo usando nenhuma API.")
 
                 # ... (resto da lógica para mudar o IP, como antes - você pode adicionar aqui se necessário)
-                messagebox.showinfo("Sucesso", f"✅ Tentativa de mudar o IP realizada! (Verifique seu IP)") # Mensagem genérica, você pode refinar
+                messagebox.showinfo("Sucesso", f"✅ Tentativa de mudar o IP realizada! (Verifique seu IP)")  # Mensagem genérica, você pode refinar
             except Exception as e:
                 messagebox.showerror("Erro", f"❌ Falha ao mudar IP: {e}")
 
