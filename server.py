@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import psycopg2
 import secrets
 import datetime
-from datetime import datetime, timedelta, timezone # <--- Importação correta de timezone
+from datetime import datetime, timedelta, timezone  # <--- Importação correta de timezone
 import logging  # Importando o módulo de logging
 
 load_dotenv()
@@ -43,15 +43,15 @@ def generate_keys():
             data_expiracao = datetime.datetime.now(timezone.utc) + datetime.timedelta(days=duracao_dias)
             # INSERINDO CHAVE DIRETAMENTE NA TABELA 'generated_keys'
             cur.execute("INSERT INTO generated_keys (access_key, data_geracao, data_expiracao) VALUES (%s, %s, %s)",
-                        (chave, datetime.datetime.now(timezone.utc), data_expiracao)) # Salvando data_geracao e data_expiracao com UTC
+                        (chave, datetime.datetime.now(timezone.utc), data_expiracao))  # Salvando data_geracao e data_expiracao com UTC
             chaves_geradas.append({"chave": chave, "expira_em": data_expiracao.isoformat()})  # Retornando info de expiração para o cliente (opcional)
         conn.commit()
         cur.close()
         conn.close()
-        logging.info(f"{quantidade} chaves geradas e salvas no banco de dados com duração de {duracao_dias} dias.") # Log informativo
+        logging.info(f"{quantidade} chaves geradas e salvas no banco de dados com duração de {duracao_dias} dias.")  # Log informativo
         return jsonify({"success": True, "message": f"{quantidade} chaves geradas e salvas no banco de dados com sucesso.", "chaves": chaves_geradas})
     except Exception as e:
-        logging.error(f"Erro ao gerar chaves e salvar no banco de dados: {e}") # Log de ERRO!
+        logging.error(f"Erro ao gerar chaves e salvar no banco de dados: {e}")  # Log de ERRO!
         return jsonify({"success": False, "message": f"Erro ao gerar chaves e salvar no banco de dados: {e}"}), 500
 
 @app.route('/register', methods=['POST'])
@@ -87,7 +87,7 @@ def register_user():
             conn.close()
             return jsonify({"success": False, "message": "Chave de acesso inválida ou não encontrada."}), 401
 
-        data_expiracao_chave, chave_usada = result_chave # Obtendo data de expiração e status 'usada'
+        data_expiracao_chave, chave_usada = result_chave  # Obtendo data de expiração e status 'usada'
 
         if chave_usada:
             cur.close()
@@ -95,7 +95,7 @@ def register_user():
             return jsonify({"success": False, "message": "Chave de acesso já foi utilizada para registro."}), 401
 
         # Use datetime.datetime.now(timezone.utc) para comparação com fuso horário UTC AQUI
-        if datetime.datetime.now(timezone.utc) > data_expiracao_chave: # <--- Modificado para usar timezone.utc
+        if datetime.datetime.now(timezone.utc) > data_expiracao_chave:  # <--- Modificado para usar timezone.utc
             cur.close()
             conn.close()
             return jsonify({"success": False, "message": "Chave de acesso expirada."}), 401
@@ -106,16 +106,16 @@ def register_user():
         # REGISTRANDO USUÁRIO NA TABELA 'users'
         # Use datetime.datetime.now(timezone.utc) para data_registro com fuso horário UTC AQUI (opcional, mas consistente)
         cur.execute("INSERT INTO users (access_key, hwid, username, data_registro, data_expiracao) VALUES (%s, %s, %s, %s, %s)",
-                    (key, hwid, usuario, datetime.datetime.now(timezone.utc), data_expiracao_chave)) # Salvando data_registro com UTC e data_expiracao da chave validada
+                    (key, hwid, usuario, datetime.datetime.now(timezone.utc), data_expiracao_chave))  # Salvando data_registro com UTC e data_expiracao da chave validada
 
         conn.commit()
         cur.close()
         conn.close()
-        logging.info(f"Usuário '{usuario}' registrado com HWID '{hwid[:10]}...' usando chave válida '{key[:8]}...'. Chave marcada como 'usada'.") # Log informativo
+        logging.info(f"Usuário '{usuario}' registrado com HWID '{hwid[:10]}...' usando chave válida '{key[:8]}...'. Chave marcada como 'usada'.")  # Log informativo
         return jsonify({"success": True, "message": "Usuário registrado com sucesso com chave válida!"})
 
     except Exception as e:
-        logging.error(f"Erro ao registrar usuário '{usuario}' no banco de dados: {e}") # Log de ERRO!
+        logging.error(f"Erro ao registrar usuário '{usuario}' no banco de dados: {e}")  # Log de ERRO!
         return jsonify({"success": False, "message": f"Erro ao registrar usuário no banco de dados: {e}"}), 500
 
 @app.route('/validate_key', methods=['POST'])
@@ -130,7 +130,7 @@ def validate_key():
 
     # Validação de dados de entrada (importante para segurança e evitar erros!)
     if not key:
-        return jsonify({"success": False, "message": "Nome de usuário (key) não fornecido."}), 400 # Correção para refletir que 'key' é agora username
+        return jsonify({"success": False, "message": "Nome de usuário (key) não fornecido."}), 400  # Correção para refletir que 'key' é agora username
     if not hwid:
         return jsonify({"success": False, "message": "HWID não fornecido."}), 400
 
@@ -146,18 +146,18 @@ def validate_key():
         if result:
             data_expiracao_db = result[0]  # Data de expiração vinda do banco de dados 'users'
             # Use datetime.datetime.now(timezone.utc) para comparação com fuso horário UTC AQUI
-            if datetime.datetime.now(timezone.utc) <= data_expiracao_db: # <--- Modificado para usar timezone.utc
-                logging.info(f"Usuário '{key}' com HWID '{hwid[:10]}...' validado com sucesso.") # Log de validação bem-sucedida
+            if datetime.datetime.now(timezone.utc) <= data_expiracao_db:  # <--- Modificado para usar timezone.utc
+                logging.info(f"Usuário '{key}' com HWID '{hwid[:10]}...' validado com sucesso.")  # Log de validação bem-sucedida
                 return jsonify({"success": True, "message": "Chave/Usuário válido e dentro do prazo!"})
             else:
-                logging.warning(f"Chave/Usuário '{key}' com HWID '{hwid[:10]}...' expirado.") # Log de chave expirada (WARNING)
+                logging.warning(f"Chave/Usuário '{key}' com HWID '{hwid[:10]}...' expirado.")  # Log de chave expirada (WARNING)
                 return jsonify({"success": False, "message": "Chave/Usuário expirado."}), 401
         else:
-            logging.warning(f"Tentativa de login inválida para usuário '{key}' e HWID '{hwid[:10]}...'. Usuário/Chave inválido ou não registrado.") # Log de login inválido (WARNING)
+            logging.warning(f"Tentativa de login inválida para usuário '{key}' e HWID '{hwid[:10]}...'. Usuário/Chave inválido ou não registrado.")  # Log de login inválido (WARNING)
             return jsonify({"success": False, "message": "Usuário/Chave inválido ou não registrado para este HWID."}), 401
 
     except Exception as e:
-        logging.error(f"Erro ao validar chave/usuário no banco de dados para usuário '{key}' e HWID '{hwid[:10]}...': {e}") # Log de ERRO!
+        logging.error(f"Erro ao validar chave/usuário no banco de dados para usuário '{key}' e HWID '{hwid[:10]}...': {e}")  # Log de ERRO!
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário no banco de dados: {e}"}), 500
 
 @app.route('/ping', methods=['GET'])

@@ -1,4 +1,3 @@
-# parte 1
 import os
 import json
 import time
@@ -7,7 +6,7 @@ import webbrowser
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone # Importado timezone
 import subprocess
 import random
 import shutil
@@ -15,10 +14,14 @@ from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import base64
 import ast
-import secrets  # Importar a biblioteca secrets para geração de chaves seguras
-import uuid  # Importar a biblioteca uuid para geração de UUIDs (opcional, mas útil)
+import secrets
+import uuid
+import logging # Importando o módulo de logging
 
 load_dotenv()
+
+# Configuração de Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configurações (usando variáveis de ambiente):
 # SERVER_URL CORRIGIDO: Agora DEVE ser o endereço HTTP/HTTPS do SEU SERVIDOR WEB no Render.com!
@@ -62,57 +65,93 @@ def obter_identificadores_hardware():
 
 # Funções para comunicação com o servidor (CORRIGIDAS para usar SERVER_URL HTTP!)
 def ativar_chave_com_servidor(key, hwid, usuario):  # MODIFICADO: Aceita 'usuario'
+    """Ativa a chave de acesso com o servidor, registrando o usuário."""
     try:
         # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /register
-        response = requests.post(f"{SERVER_URL}/register", json={"key": key, "hwid": hwid, "username": usuario})  # MODIFICADO: Envia 'usuario' como 'username'
+        dados_registro = {"key": key, "hwid": hwid, "username": usuario} # MODIFICADO: Envia 'usuario' como 'username'
+        logging.info(f"Enviando dados de registro para o servidor: {dados_registro}") # Log dos dados enviados
+        response = requests.post(f"{SERVER_URL}/register", json=dados_registro)
         response.raise_for_status()  # Verifica se houve erros HTTP na resposta
-        data = response.json()
-        return data["success"], data["message"]
+        resposta_servidor = response.json()
+        if resposta_servidor.get("success"):
+            logging.info(f"Registro bem-sucedido do usuário '{usuario}'.") # Log de sucesso
+            return True, resposta_servidor.get("message", "Usuário registrado com sucesso!")
+        else:
+            mensagem_erro = resposta_servidor.get("message", "Erro desconhecido ao ativar chave.")
+            logging.warning(f"Falha no registro do usuário '{usuario}': {mensagem_erro}") # Log de falha
+            return False, mensagem_erro
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar ao servidor (ativar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
+        mensagem_erro_http = f"Erro ao conectar ao servidor (ativar_chave_com_servidor): {e}"
+        logging.error(mensagem_erro_http) # Log de erro HTTP
         if e.response is not None:
-            print(f"Resposta de erro do servidor (ativar_chave_com_servidor): {e.response.status_code} - {e.response.text}")
-        return False, "Erro ao conectar ao servidor para registro." # Mensagem de erro mais clara
+            mensagem_erro_servidor = f"Resposta de erro do servidor (ativar_chave_com_servidor): {e.response.status_code} - {e.response.text}"
+            logging.error(mensagem_erro_servidor) # Log da resposta de erro do servidor
+            return False, f"{mensagem_erro_http} Detalhes: {mensagem_erro_servidor}"
+        return False, mensagem_erro_http
     except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da resposta (ativar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
-        return False, "Erro ao processar resposta do servidor (JSON inválido no registro)." # Mensagem de erro mais clara
+        mensagem_erro_json = f"Erro ao decodificar JSON da resposta (ativar_chave_com_servidor): {e}"
+        logging.error(mensagem_erro_json) # Log de erro JSON
+        return False, f"{mensagem_erro_json} Resposta recebida: {response.text if 'response' in locals() else 'Nenhuma resposta recebida'}"
+
 
 def validar_chave_com_servidor(usuario, hwid):  # MODIFICADO: 'key' agora é 'usuario' para login
+    """Valida a chave/usuário com o servidor para login."""
     try:
         # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /validate_key (corrigido no server.py)
-        response = requests.post(f"{SERVER_URL}/validate_key", json={"key": usuario, "hwid": hwid})  # MODIFICADO: Envia 'usuario' como 'key'
+        dados_login = {"key": usuario, "hwid": hwid}  # MODIFICADO: Envia 'usuario' como 'key'
+        logging.info(f"Enviando dados de login para o servidor: {dados_login}") # Log dos dados de login
+        response = requests.post(f"{SERVER_URL}/validate_key", json=dados_login)
         response.raise_for_status()  # Verifica se houve erros HTTP na resposta
-        data = response.json()
-        return data["success"], data["message"]
+        resposta_servidor = response.json()
+        if resposta_servidor.get("success"):
+            logging.info(f"Login bem-sucedido do usuário '{usuario}'.") # Log de login bem-sucedido
+            return True, resposta_servidor.get("message", "Login bem-sucedido!")
+        else:
+            mensagem_erro_login = resposta_servidor.get("message", "Falha ao validar login.")
+            logging.warning(f"Falha no login do usuário '{usuario}': {mensagem_erro_login}") # Log de falha de login
+            return False, mensagem_erro_login
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar ao servidor (validar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
+        mensagem_erro_http = f"Erro ao conectar ao servidor (validar_chave_com_servidor): {e}"
+        logging.error(mensagem_erro_http) # Log de erro HTTP login
         if e.response is not None:
-            print(f"Resposta de erro do servidor (validar_chave_com_servidor): {e.response.status_code} - {e.response.text}")
-        return False, "Erro ao conectar ao servidor para login." # Mensagem de erro mais clara
+            mensagem_erro_servidor = f"Resposta de erro do servidor (validar_chave_com_servidor): {e.response.status_code} - {e.response.text}"
+            logging.error(mensagem_erro_servidor) # Log da resposta de erro do servidor login
+            return False,  f"{mensagem_erro_http} Detalhes: {mensagem_erro_servidor}"
+        return False, mensagem_erro_http
     except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da resposta (validar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
-        return False, "Erro ao processar resposta do servidor (JSON inválido no login)." # Mensagem de erro mais clara
+        mensagem_erro_json = f"Erro ao decodificar JSON da resposta (validar_chave_com_servidor): {e}"
+        logging.error(mensagem_erro_json) # Log de erro JSON login
+        return False, f"{mensagem_erro_json} Resposta recebida: {response.text if 'response' in locals() else 'Nenhuma resposta recebida'}"
+
 
 # Função para testar a conexão com o servidor (CORRIGIDA para usar SERVER_URL HTTP!)
 def testar_conexao_servidor(): # REMOVIDA DO MENU PRINCIPAL
+    """Testa a conexão com o servidor."""
     try:
         # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /ping
-        response = requests.get(f"{SERVER_URL}/ping", timeout=5)  # Timeout para evitar travamentos
-        response.raise_for_status()  # Lança exceção para erros HTTP (4xx, 5xx)
-        data = response.json()
-        if data.get("status") == "ok":
-            messagebox.showinfo("Conexão", "✅ Conexão com o servidor estabelecida com sucesso!")
+        response_ping = requests.get(f"{SERVER_URL}/ping", timeout=5)  # Timeout para evitar travamentos
+        response_ping.raise_for_status()  # Lança exceção para erros HTTP (4xx, 5xx)
+        resposta_ping_servidor = response_ping.json()
+        if resposta_ping_servidor.get("status") == "ok":
+            mensagem_conexao_ok = "✅ Conexão com o servidor estabelecida com sucesso!"
+            logging.info(mensagem_conexao_ok) # Log de conexão bem-sucedida
+            messagebox.showinfo("Conexão", mensagem_conexao_ok)
         else:
-            messagebox.showerror("Erro de Conexão", f"⚠️ Resposta do servidor inesperada: {data}")
+            mensagem_erro_status = f"⚠️ Resposta do servidor inesperada: {resposta_ping_servidor}"
+            logging.warning(mensagem_erro_status) # Log de resposta inesperada do servidor
+            messagebox.showerror("Erro de Conexão", mensagem_erro_status)
     except requests.exceptions.RequestException as e:
-        messagebox.showerror("Erro de Conexão", f"❌ Falha ao conectar com o servidor: {e}") # Mensagem de erro mais clara
-        print(f"Erro detalhado ao testar_conexao_servidor: {e}") # Log detalhado para debugging
+        mensagem_erro_http = f"❌ Falha ao conectar com o servidor: {e}"
+        logging.error(mensagem_erro_http) # Log de falha de conexão HTTP
+        messagebox.showerror("Erro de Conexão", mensagem_erro_http)
     except json.JSONDecodeError as e:
-        messagebox.showerror("Erro de Conexão", f"❌ Resposta do servidor inválida (não é JSON): {e}") # Mensagem de erro mais clara
-        print(f"Erro JSON ao testar_conexao_servidor: {e}") # Log detalhado para debugging
+        mensagem_erro_json = f"❌ Resposta do servidor inválida (não é JSON): {e}"
+        logging.error(mensagem_erro_json) # Log de erro JSON conexão
+        messagebox.showerror("Erro de Conexão", mensagem_erro_json)
     except Exception as e:
-        messagebox.showerror("Erro de Conexão", f"❌ Erro inesperado ao testar conexão: {e}") # Mensagem de erro mais clara
-        print(f"Erro inesperado em testar_conexao_servidor: {e}") # Log detalhado para debugging
+        mensagem_erro_inesperado = f"❌ Erro inesperado ao testar conexão: {e}"
+        logging.error(mensagem_erro_inesperado) # Log de erro inesperado conexão
+        messagebox.showerror("Erro de Conexão", mensagem_erro_inesperado)
 
 # Classe para Interface Visual
 class VisualManager:
@@ -156,9 +195,9 @@ class RegisterScreen:
         hwid = obter_identificadores_hardware()  # Obtém o HWID
 
         # Validar a chave com o servidor, enviando usuario e hwid
-        success, message = ativar_chave_com_servidor(key, hwid, usuario)  # MODIFICADO: Envia usuario agora
-        if not success:
-            messagebox.showerror("Erro", f"⚠️ {message}")
+        sucesso_registro, mensagem_registro = ativar_chave_com_servidor(key, hwid, usuario)  # MODIFICADO: Envia usuario agora
+        if not sucesso_registro:
+            messagebox.showerror("Erro", f"⚠️ {mensagem_registro}")
             return None
 
         messagebox.showinfo("Sucesso", "✅ Conta criada com sucesso!")
@@ -272,7 +311,7 @@ class MainMenu:
             width=16, # Mais Menor
             height=1,
             relief="ridge",
-            bd=0,  # REMOVIDO BORDA DO BOTÃO PARA FICAR MAIS CLEAN
+            bd=0,  # REMOVIDO BORDA DO BOTÃO PARA FICAR CLEAN
             pady=3, # Mais Menor
             padx=6, # Mais Menor
             highlightbackground="#1E1E1E", # Cor de fundo para 'relief' e 'bd' se necessário
@@ -302,9 +341,9 @@ class MainMenu:
             return
 
         # **CORREÇÃO DO LOGIN:** Validar chave COM usuário e senha (ambos são importantes!)
-        success, message = validar_chave_com_servidor(usuario, hwid) # <--- USANDO APENAS USUARIO PARA VALIDAR (CONFORME A FUNÇÃO)
-        if not success:
-            messagebox.showerror("Erro", f"⚠️ {message}")
+        sucesso_login, mensagem_login = validar_chave_com_servidor(usuario, hwid) # <--- USANDO APENAS USUARIO PARA VALIDAR (CONFORME A FUNÇÃO)
+        if not sucesso_login:
+            messagebox.showerror("Erro", f"⚠️ {mensagem_login}")
             return
         messagebox.showinfo("Sucesso", "✅ Login realizado com sucesso!")
         self.app.usuario_logado = usuario
@@ -402,7 +441,6 @@ class SpooferApp:
             activeforeground="black"
         )
         button_guia.pack(pady=0)
-
         # Checklist "Li o Guia" (SEGUNDO ELEMENTO: CHECKLIST)
         check_guia = tk.Checkbutton(
             guia_checklist_frame, # Checklist dentro do frame alinhado
@@ -498,9 +536,6 @@ class SpooferApp:
         else: # Se o checklist NÃO estiver marcado (False)
             self.spoof_button.config(state=tk.DISABLED) # Desabilita o botão Spoofer
 
-    def confirmar_spoofar(self): # Nova função para confirmar leitura do guia - **REMOVIDA!**
-        pass # Função removida, lógica movida para checklist e spoofar_completo
-
     def requisitar_chaves_servidor(self): # FUNÇÃO MODIFICADA! REQUISITA CHAVES DO SERVIDOR!
         quantidade_chaves = simpledialog.askinteger("Gerar Chaves", "Quantas chaves deseja gerar?", minvalue=1, initialvalue=1)
         if quantidade_chaves is None:  # Usuário cancelou
@@ -512,33 +547,41 @@ class SpooferApp:
 
         try:
             # FAZ REQUISIÇÃO POST PARA O ENDPOINT /generate_keys NO SERVIDOR
-            response = requests.post(f"{SERVER_URL}/generate_keys", json={"quantidade": quantidade_chaves, "duracao_dias": duracao_dias})  # <--- ENVIA QUANTIDADE E DURACAO PARA O SERVIDOR!
-            response.raise_for_status()  # Verifica erros HTTP
-            data = response.json()
-            if data["success"]:
-                chaves_geradas_info = data["chaves"]  # Recebe lista de dicionários com chave e expiração
+            response_gerar_chaves = requests.post(f"{SERVER_URL}/generate_keys", json={"quantidade": quantidade_chaves, "duracao_dias": duracao_dias})  # <--- ENVIA QUANTIDADE E DURACAO PARA O SERVIDOR!
+            response_gerar_chaves.raise_for_status()  # Verifica erros HTTP
+            resposta_gerar_chaves_servidor = response_gerar_chaves.json()
+            if resposta_gerar_chaves_servidor.get("success"):
+                chaves_geradas_info = resposta_gerar_chaves_servidor.get("chaves", [])  # Recebe lista de dicionários com chave e expiração
                 texto_chaves = ""
                 for chave_info in chaves_geradas_info:  # Formata as chaves com info de expiração (opcional)
                     texto_chaves += f"Chave: {chave_info['chave']}, Expira em: {chave_info['expira_em']}\n"  # <--- EXIBINDO EXPIRAÇÃO (OPCIONAL)
                 messagebox.showinfo("Chaves Geradas", f"Chaves de Acesso Geradas:\n\n{texto_chaves}")
             else:
-                messagebox.showerror("Erro ao Gerar Chaves", f"Erro do servidor: {data['message']}")
+                mensagem_erro_gerar_chaves = resposta_gerar_chaves_servidor.get("message", "Erro ao gerar chaves no servidor.")
+                logging.warning(f"Erro ao gerar chaves (requisitar_chaves_servidor): {mensagem_erro_gerar_chaves}") # Log de erro geração chaves
+                messagebox.showerror("Erro ao Gerar Chaves", mensagem_erro_gerar_chaves)
         except requests.exceptions.RequestException as e:
-            messagebox.showerror("Erro ao Gerar Chaves", f"Falha ao comunicar com o servidor para gerar chaves: {e}")
+            mensagem_erro_http = f"Falha ao comunicar com o servidor para gerar chaves: {e}"
+            logging.error(mensagem_erro_http) # Log de erro HTTP geração chaves
+            messagebox.showerror("Erro ao Gerar Chaves", mensagem_erro_http)
         except json.JSONDecodeError as e:
-            messagebox.showerror("Erro ao Gerar Chaves", f"Resposta do servidor inválida (não é JSON): {e}")
+            mensagem_erro_json = f"Resposta do servidor inválida (não é JSON): {e}"
+            logging.error(mensagem_erro_json) # Log de erro JSON geração chaves
+            messagebox.showerror("Erro ao Gerar Chaves", mensagem_erro_json)
         except Exception as e:
-            messagebox.showerror("Erro ao Gerar Chaves", f"Erro inesperado ao gerar chaves: {e}")
+            mensagem_erro_inesperado = f"Erro inesperado ao gerar chaves: {e}"
+            logging.error(mensagem_erro_inesperado) # Log de erro inesperado geração chaves
+            messagebox.showerror("Erro ao Gerar Chaves", mensagem_erro_inesperado)
 
     def spoofar_completo(self):
-        if not self.guia_lido.get(): # <--- VERIFICA SE CHECKLIST ESTÁ MARCADO
+        if not self.guia_lido.get():  # <--- VERIFICA SE CHECKLIST ESTÁ MARCADO
             estado_anterior = self.feedback_text.cget("state") # Salva o estado anterior
             self.feedback_text.config(state=tk.NORMAL) # Habilita para edição
             self.feedback_text.delete("1.0", tk.END) # Limpa todo o texto
             self.feedback_text.insert(tk.END, "⚠️ Leia o 'Desvincular Contas & Apps' e marque 'Li o Guia' para usar o Spoofer!\n", "erro") # Mensagem de erro - TEXTO DO BOTÃO GUIA ALTERADO!
             self.feedback_text.tag_config("erro", foreground="red") # Tag para cor vermelha
             self.feedback_text.config(state=estado_anterior) # Restaura o estado original
-            return # <--- INTERROMPE A FUNÇÃO SE O CHECKLIST NÃO ESTIVER MARCADO
+            return  # <--- INTERROMPE A FUNÇÃO SE O CHECKLIST NÃO ESTIVER MARCADO
 
         feedback = "" # Variável para acumular feedback
 
@@ -568,7 +611,9 @@ class SpooferApp:
                 exibir_feedback(f"✅ MAC Address alterado para: {novo_mac}")
                 return True
             except Exception as e:
-                exibir_feedback(f"❌ Falha ao mudar MAC Address: {e}", sucesso=False)
+                mensagem_erro_mac = f"❌ Falha ao mudar MAC Address: {e}"
+                logging.error(mensagem_erro_mac) # Log de erro ao mudar MAC
+                exibir_feedback(mensagem_erro_mac, sucesso=False)
                 return False
 
         # Função para limpar cache e logs do FiveM
@@ -585,7 +630,9 @@ class SpooferApp:
                 exibir_feedback("✅ Cache e logs do FiveM removidos!")
                 return True
             except Exception as e:
-                exibir_feedback(f"❌ Falha ao limpar cache: {e}", sucesso=False)
+                mensagem_erro_cache = f"❌ Falha ao limpar cache: {e}"
+                logging.error(mensagem_erro_cache) # Log de erro ao limpar cache
+                exibir_feedback(mensagem_erro_cache, sucesso=False)
                 return False
 
         # Função para criar novo usuário do Windows
@@ -597,7 +644,9 @@ class SpooferApp:
                 exibir_feedback(f"✅ Novo usuário criado: {novo_usuario} | Senha: {senha}")
                 return True
             except Exception as e:
-                exibir_feedback(f"❌ Falha ao criar novo usuário: {e}", sucesso=False)
+                mensagem_erro_usuario_windows = f"❌ Falha ao criar novo usuário: {e}"
+                logging.error(mensagem_erro_usuario_windows) # Log de erro ao criar usuário Windows
+                exibir_feedback(mensagem_erro_usuario_windows, sucesso=False)
                 return False
 
         # Função para mudar o endereço IP (melhorada)
@@ -608,18 +657,19 @@ class SpooferApp:
                 ip_antigo = "N/A" # Valor padrão se não conseguir obter o IP antigo
                 for api in apis:
                     try:
-                        response = requests.get(api, timeout=5)  # Timeout para evitar travamentos
-                        response.raise_for_status()  # Verifica se a resposta foi bem sucedida
+                        response_ip = requests.get(api, timeout=5)  # Timeout para evitar travamentos
+                        response_ip.raise_for_status()  # Verifica se a resposta foi bem sucedida
                         if api == "https://api64.ipify.org?format=json":
-                            ip_info = response.json()
+                            ip_info = response_ip.json()
                             ip_antigo = ip_info["ip"]
                         elif api == "https://ifconfig.me/ip":
-                            ip_antigo = response.text.strip()
+                            ip_antigo = response_ip.text.strip()
                         elif api == "https://ipinfo.io/ip":
-                            ip_antigo = response.text.strip()
+                            ip_antigo = response_ip.text.strip()
                         break  # Sai do loop se o IP for obtido com sucesso
                     except requests.exceptions.RequestException as e:
-                        print(f"Erro ao obter IP de {api}: {e}")
+                        mensagem_erro_api_ip = f"Erro ao obter IP de {api}: {e}"
+                        logging.error(mensagem_erro_api_ip) # Log de erro ao obter IP da API
                 else:  # Executado se o loop terminar sem obter o IP
                     raise Exception("Não foi possível obter o IP externo usando nenhuma API.")
 
@@ -627,7 +677,9 @@ class SpooferApp:
                 exibir_feedback(f"✅ Tentativa de mudar o IP realizada! IP antigo (aproximado): {ip_antigo} (Verifique seu IP)")  # Mensagem com IP antigo
                 return True
             except Exception as e:
-                exibir_feedback(f"❌ Falha ao mudar IP: {e}", sucesso=False)
+                mensagem_erro_mudar_ip = f"❌ Falha ao mudar IP: {e}"
+                logging.error(mensagem_erro_mudar_ip) # Log de erro ao mudar IP
+                exibir_feedback(mensagem_erro_mudar_ip, sucesso=False)
                 return False
 
         # Limpar a Textbox de feedback antes de iniciar
@@ -636,6 +688,9 @@ class SpooferApp:
         self.feedback_text.delete("1.0", tk.END) # Limpa todo o texto
         self.feedback_text.config(state=estado_anterior_limpeza) # Restaura o estado original
         feedback = "" # Reseta o feedback acumulado
+
+        # Exibir mensagem inicial de início do spoofing
+        exibir_feedback("🚀 Iniciando processo de Spoofing 1 Click...", sucesso=True)
 
         # Executar todas as funções de spoofing e exibir feedback
         sucesso_mac = mudar_mac()
