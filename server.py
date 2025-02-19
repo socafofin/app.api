@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import psycopg2
 import secrets
 import datetime
+from datetime import datetime, timedelta, timezone # <--- Importação correta de timezone
 import logging  # Importando o módulo de logging
 
 load_dotenv()
@@ -14,8 +15,6 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 DATABASE_URL = os.environ.get("DATABASE_URL")  # <--- **VERIFIQUE SE ESTE É O DATABASE_URL CORRETO NO RENDER.COM!**
-# REMOVIDA: Lista IN-MEMORY para armazenar chaves válidas (NÃO USAMOS MAIS!)
-# CHAVES_VALIDAS = []
 
 # Endpoint para gerar chaves (ADMINISTRATIVO - PROTEJA ESTE ENDPOINT EM PRODUÇÃO!)
 @app.route('/generate_keys', methods=['POST'])
@@ -40,10 +39,11 @@ def generate_keys():
         cur = conn.cursor()
         for _ in range(quantidade):
             chave = secrets.token_urlsafe(32)
-            data_expiracao = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
+            # Use datetime.datetime.now(timezone.utc) para fuso horário UTC AQUI
+            data_expiracao = datetime.datetime.now(timezone.utc) + datetime.timedelta(days=duracao_dias)
             # INSERINDO CHAVE DIRETAMENTE NA TABELA 'generated_keys'
             cur.execute("INSERT INTO generated_keys (access_key, data_geracao, data_expiracao) VALUES (%s, %s, %s)",
-                        (chave, datetime.datetime.now(), data_expiracao)) # Salvando data_geracao e data_expiracao
+                        (chave, datetime.datetime.now(timezone.utc), data_expiracao)) # Salvando data_geracao e data_expiracao com UTC
             chaves_geradas.append({"chave": chave, "expira_em": data_expiracao.isoformat()})  # Retornando info de expiração para o cliente (opcional)
         conn.commit()
         cur.close()
@@ -94,7 +94,8 @@ def register_user():
             conn.close()
             return jsonify({"success": False, "message": "Chave de acesso já foi utilizada para registro."}), 401
 
-        if datetime.datetime.now() > data_expiracao_chave:
+        # Use datetime.datetime.now(timezone.utc) para comparação com fuso horário UTC AQUI
+        if datetime.datetime.now(timezone.utc) > data_expiracao_chave: # <--- Modificado para usar timezone.utc
             cur.close()
             conn.close()
             return jsonify({"success": False, "message": "Chave de acesso expirada."}), 401
@@ -103,8 +104,9 @@ def register_user():
         cur.execute("UPDATE generated_keys SET usada = TRUE WHERE access_key = %s", (key,))
 
         # REGISTRANDO USUÁRIO NA TABELA 'users'
+        # Use datetime.datetime.now(timezone.utc) para data_registro com fuso horário UTC AQUI (opcional, mas consistente)
         cur.execute("INSERT INTO users (access_key, hwid, username, data_registro, data_expiracao) VALUES (%s, %s, %s, %s, %s)",
-                    (key, hwid, usuario, datetime.datetime.now(), data_expiracao_chave)) # Usando data_expiracao da chave validada
+                    (key, hwid, usuario, datetime.datetime.now(timezone.utc), data_expiracao_chave)) # Salvando data_registro com UTC e data_expiracao da chave validada
 
         conn.commit()
         cur.close()
@@ -143,7 +145,8 @@ def validate_key():
 
         if result:
             data_expiracao_db = result[0]  # Data de expiração vinda do banco de dados 'users'
-            if datetime.datetime.now() <= data_expiracao_db:  # VERIFICANDO EXPIRACAO
+            # Use datetime.datetime.now(timezone.utc) para comparação com fuso horário UTC AQUI
+            if datetime.datetime.now(timezone.utc) <= data_expiracao_db: # <--- Modificado para usar timezone.utc
                 logging.info(f"Usuário '{key}' com HWID '{hwid[:10]}...' validado com sucesso.") # Log de validação bem-sucedida
                 return jsonify({"success": True, "message": "Chave/Usuário válido e dentro do prazo!"})
             else:
