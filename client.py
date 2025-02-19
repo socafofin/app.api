@@ -20,7 +20,7 @@ import uuid # Importar a biblioteca uuid para geração de UUIDs (opcional, mas 
 load_dotenv()
 
 # Configurações (usando variáveis de ambiente):
-SERVER_URL = os.environ.get("SERVER_URL") or "https://spoofer-db.onrender.com"
+SERVER_URL = os.environ.get("SERVER_URL") or "postgresql://spoofer_db_user:2AEikVNcLBxCEkFU1152uSSzX4Nj7Na4@dpg-cuoi7s52ng1s73e9j6p0-a.frankfurt-postgres.render.com/spoofer_db"
 DISCORD_LINK = os.environ.get("DISCORD_LINK") or "https://discord.gg/9Z5m4zk9"
 LOGO_PATH = os.environ.get("LOGO_PATH") or "logo.png"
 BACKGROUND_PATH = os.environ.get("BACKGROUND_PATH") or "background.png"
