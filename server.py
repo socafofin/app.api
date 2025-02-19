@@ -43,7 +43,7 @@ def generate_keys():
             data_expiracao = datetime.datetime.now(timezone.utc) + datetime.timedelta(days=duracao_dias)
             # INSERINDO CHAVE DIRETAMENTE NA TABELA 'generated_keys'
             cur.execute("INSERT INTO generated_keys (access_key, data_geracao, data_expiracao) VALUES (%s, %s, %s)",
-                        (chave, datetime.datetime.now(timezone.utc), data_expiracao))  # Salvando data_geracao e data_expiracao com UTC
+                (chave, datetime.datetime.now(timezone.utc), data_expiracao)) # <--- VERIFIQUE SE TEM `timezone.utc` AQUI!
             chaves_geradas.append({"chave": chave, "expira_em": data_expiracao.isoformat()})  # Retornando info de expiração para o cliente (opcional)
         conn.commit()
         cur.close()
@@ -106,7 +106,7 @@ def register_user():
         # REGISTRANDO USUÁRIO NA TABELA 'users'
         # Use datetime.datetime.now(timezone.utc) para data_registro com fuso horário UTC AQUI (opcional, mas consistente)
         cur.execute("INSERT INTO users (access_key, hwid, username, data_registro, data_expiracao) VALUES (%s, %s, %s, %s, %s)",
-                    (key, hwid, usuario, datetime.datetime.now(timezone.utc), data_expiracao_chave))  # Salvando data_registro com UTC e data_expiracao da chave validada
+                (key, hwid, usuario, datetime.datetime.now(timezone.utc), data_expiracao_chave)) # <--- VERIFIQUE SE TEM `timezone.utc` AQUI!
 
         conn.commit()
         cur.close()

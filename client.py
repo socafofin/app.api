@@ -311,7 +311,7 @@ class MainMenu:
             width=16, # Mais Menor
             height=1,
             relief="ridge",
-            bd=0,  # REMOVIDO BORDA DO BOTÃO PARA FICAR CLEAN
+            bd=0,  # REMOVIDO BORDA DO BOTÃO PARA FICAR MAIS CLEAN
             pady=3, # Mais Menor
             padx=6, # Mais Menor
             highlightbackground="#1E1E1E", # Cor de fundo para 'relief' e 'bd' se necessário
