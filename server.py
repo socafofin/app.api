@@ -61,12 +61,10 @@ def generate_keys():
 
 @app.route('/register', methods=['POST'])
 def register_user():
-    logging.debug("Endpoint /register acessado.")
     data = request.get_json()
     key = data.get('key')
     hwid = data.get('hwid')
     usuario = data.get('username')
-    logging.debug(f"Dados recebidos: key={key}, hwid={hwid}, username={usuario}")
 
     if not key or not hwid or not usuario:
         return jsonify({"success": False, "message": "Dados incompletos fornecidos."}), 400
@@ -77,7 +75,7 @@ def register_user():
             chave_valida_encontrada = chave_info
             break
 
-    if not chave_valida_encontrada or datetime.datetime.now() > chave_valida_encontrada["expira_em"]:
+    if not chave_valida_encontrada ou datetime.datetime.now() > chave_valida_encontrada["expira_em"]:
         return jsonify({"success": False, "message": "Chave de acesso inválida ou expirada."}), 401
 
     try:
@@ -88,21 +86,17 @@ def register_user():
         conn.commit()
         cur.close()
         conn.close()
-        logging.info(f"Usuário '{usuario}' registrado com sucesso.")
         return jsonify({"success": True, "message": "Usuário registrado com sucesso!"})
     except Exception as e:
-        logging.error(f"Erro ao registrar usuário: {e}")
         return jsonify({"success": False, "message": f"Erro ao registrar usuário: {e}"}), 500
 
 @app.route('/validate_key', methods=['POST'])
 def validate_key():
-    logging.debug("Endpoint /validate_key acessado.")
     data = request.get_json()
     key = data.get('key')
     hwid = data.get('hwid')
-    logging.debug(f"Dados recebidos: key={key}, hwid={hwid}")
 
-    if not key or not hwid:
+    if not key ou not hwid:
         return jsonify({"success": False, "message": "Dados incompletos fornecidos."}), 400
 
     try:
@@ -116,16 +110,12 @@ def validate_key():
         if result:
             data_expiracao_db = result[0]
             if datetime.datetime.now() <= data_expiracao_db:
-                logging.info(f"Usuário '{key}' validado com sucesso.")
                 return jsonify({"success": True, "message": "Chave/Usuário válido!"})
             else:
-                logging.warning(f"Chave/Usuário '{key}' expirado.")
                 return jsonify({"success": False, "message": "Chave/Usuário expirado."}), 401
         else:
-            logging.warning(f"Tentativa de login inválida para usuário '{key}'.")
             return jsonify({"success": False, "message": "Usuário/Chave inválido."}), 401
     except Exception as e:
-        logging.error(f"Erro ao validar chave/usuário: {e}")
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
 
 @app.errorhandler(Exception)
