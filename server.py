@@ -121,13 +121,17 @@ def validate_key():
         conn.close()
 
         if result:
-            data_expiracao_db = result[0]
-            if datetime.datetime.now() <= data_expiracao_db:
-                return jsonify({"success": True, "message": "Chave/Usuário válido!"})
+            data_expiracao_db = result[0]  # Data de expiração vinda do banco de dados
+            if datetime.datetime.now() <= data_expiracao_db:  # VERIFICANDO EXPIRACAO
+                logging.info(f"Usuário '{key}' com HWID '{hwid[:10]}...' validado com sucesso.") # Log de validação bem-sucedida
+                return jsonify({"success": True, "message": "Chave/Usuário válido e dentro do prazo!"})
             else:
+                logging.warning(f"Chave/Usuário '{key}' com HWID '{hwid[:10]}...' expirado.") # Log de chave expirada (WARNING)
                 return jsonify({"success": False, "message": "Chave/Usuário expirado."}), 401
         else:
-            return jsonify({"success": False, "message": "Usuário/Chave inválido."}), 401
+            logging.warning(f"Tentativa de login inválida para usuário '{key}' e HWID '{hwid[:10]}...'. Usuário/Chave inválido ou não registrado.") # Log de login inválido (WARNING)
+            return jsonify({"success": False, "message": "Usuário/Chave inválido ou não registrado para este HWID."}), 401
+
     except Exception as e:
         logging.error(f"Erro ao validar chave/usuário: {e}")
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
