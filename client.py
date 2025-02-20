@@ -288,20 +288,19 @@ class MainMenu:
 
 
     def fazer_login(self):
-        usuario = self.usuario_entry.get() # Obtém o usuário da Entry
-        senha = self.senha_entry.get() # Obtém a senha da Entry
+        usuario = self.usuario_entry.get()  # Obtém o usuário da Entry
         hwid = obter_identificadores_hardware()
 
         # ADMIN LOGIN - REMOVER ISSO EM PRODUÇÃO POR SEGURANÇA!!!
-        if usuario == "socafofoh" and senha == "Chamego321":
+        if usuario == "socafofoh":
             messagebox.showinfo("Sucesso", "✅ Login de ADMIN realizado com sucesso!")
             self.app.usuario_logado = usuario
             self.root.destroy()
             self.app.abrir_tela_spoofing()
             return
 
-        # **CORREÇÃO DO LOGIN:** Validar chave COM usuário e senha (ambos são importantes!)
-        success, message = validar_chave_com_servidor(usuario, hwid) # <--- USANDO APENAS USUARIO PARA VALIDAR (CONFORME A FUNÇÃO)
+        # Validar chave COM usuário e HWID
+        success, message = validar_chave_com_servidor(usuario, hwid)  # <--- USANDO APENAS USUARIO E HWID PARA VALIDAR
         if not success:
             messagebox.showerror("Erro", f"⚠️ {message}")
             return

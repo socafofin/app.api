@@ -106,32 +106,31 @@ def register_user():
 @app.route('/validate_key', methods=['POST'])
 def validate_key():
     data = request.get_json()
-    key = data.get('key')
+    usuario = data.get('key')  # Usando 'key' como 'usuario'
     hwid = data.get('hwid')
 
-    if not key or not hwid:
+    if not usuario or not hwid:
         return jsonify({"success": False, "message": "Dados incompletos fornecidos."}), 400
 
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT data_expiracao FROM users WHERE access_key = %s AND hwid = %s", (key, hwid))
+        cur.execute("SELECT data_expiracao FROM users WHERE username = %s AND hwid = %s", (usuario, hwid))
         result = cur.fetchone()
         cur.close()
         conn.close()
 
         if result:
-            data_expiracao_db = result[0]  # Data de expiração vinda do banco de dados
-            if datetime.datetime.now() <= data_expiracao_db:  # VERIFICANDO EXPIRACAO
-                logging.info(f"Usuário '{key}' com HWID '{hwid[:10]}...' validado com sucesso.") # Log de validação bem-sucedida
-                return jsonify({"success": True, "message": "Chave/Usuário válido e dentro do prazo!"})
+            data_expiracao_db = result[0]
+            if datetime.datetime.now() <= data_expiracao_db:
+                logging.info(f"Usuário '{usuario}' validado com sucesso.")
+                return jsonify({"success": True, "message": "Chave/Usuário válido!"})
             else:
-                logging.warning(f"Chave/Usuário '{key}' com HWID '{hwid[:10]}...' expirado.") # Log de chave expirada (WARNING)
+                logging.warning(f"Chave/Usuário '{usuario}' expirado.")
                 return jsonify({"success": False, "message": "Chave/Usuário expirado."}), 401
         else:
-            logging.warning(f"Tentativa de login inválida para usuário '{key}' e HWID '{hwid[:10]}...'. Usuário/Chave inválido ou não registrado.") # Log de login inválido (WARNING)
+            logging.warning(f"Tentativa de login inválida para usuário '{usuario}'.")
             return jsonify({"success": False, "message": "Usuário/Chave inválido ou não registrado para este HWID."}), 401
-
     except Exception as e:
         logging.error(f"Erro ao validar chave/usuário: {e}")
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
