@@ -76,15 +76,13 @@ def ativar_chave_com_servidor(key, hwid, usuario):  # MODIFICADO: Aceita 'usuari
         print(f"Erro ao decodificar JSON da resposta (ativar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
         return False, "Erro ao processar resposta do servidor (JSON inválido no registro)." # Mensagem de erro mais clara
 
-def validar_chave_com_servidor(usuario, hwid):  # MODIFICADO: 'key' agora é 'usuario' para login
+def validar_chave_com_servidor(chave):
     try:
-        # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /validate_key (corrigido no server.py)
-        response = requests.post(f"{SERVER_URL}/validate_key", json={"key": usuario, "hwid": hwid})  # MODIFICADO: Envia 'usuario' como 'key'
-        response.raise_for_status()  # Verifica se houve erros HTTP na resposta
-        data = response.json()
-        return data["success"], data["message"]
+        response = requests.post(SERVER_URL + '/validate_key', json={'chave': chave})
+        response.raise_for_status()
+        return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar ao servidor (validar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
+        print(f"Erro ao validar chave: {e}")
         if e.response is not None:
             print(f"Resposta de erro do servidor (validar_chave_com_servidor): {e.response.status_code} - {e.response.text}")
         return False, "Erro ao conectar ao servidor para login." # Mensagem de erro mais clara

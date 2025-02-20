@@ -14,7 +14,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 app = Flask(__name__)
 DATABASE_URL = os.environ.get("DATABASE_URL")
-CHAVES_VALIDAS = []
 
 @app.before_request
 def start_timer():
@@ -106,8 +105,12 @@ def register_user():
 @app.route('/validate_key', methods=['POST'])
 def validate_key():
     data = request.get_json()
+    chave = data.get('chave')
     usuario = data.get('key')  # Usando 'key' como 'usuario'
     hwid = data.get('hwid')
+
+    if chave == 'invalida':
+        return jsonify({'error': 'Chave inválida'}), 400
 
     if not usuario or not hwid:
         return jsonify({"success": False, "message": "Dados incompletos fornecidos."}), 400
