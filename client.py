@@ -21,7 +21,7 @@ load_dotenv()
 
 # Configurações (usando variáveis de ambiente):
 # SERVER_URL CORRIGIDO: Agora DEVE ser o endereço HTTP/HTTPS do SEU SERVIDOR WEB no Render.com!
-SERVER_URL = os.environ.get("SERVER_URL") or "https://mgs-qpbo.onrender.com"  # <--- **VERIFIQUE SE ESTE É O URL CORRETO DO SEU SERVIDOR NO RENDER.COM!**
+SERVER_URL = os.environ.get("SERVER_URL") or "https://mgs-rmu0.onrender.com"  # <--- **VERIFIQUE SE ESTE É O URL CORRETO DO SEU SERVIDOR NO RENDER.COM!**
 DISCORD_LINK = os.environ.get("DISCORD_LINK") or "https://discord.gg/9Z5m4zk9"
 LOGO_PATH = os.environ.get("LOGO_PATH") or "logo.png"
 BACKGROUND_PATH = os.environ.get("BACKGROUND_PATH") or "background.png"
