@@ -16,12 +16,13 @@ import base64
 import ast
 import secrets  # Importar a biblioteca secrets para geração de chaves seguras
 import uuid  # Importar a biblioteca uuid para geração de UUIDs (opcional, mas útil)
+import logging
 
 load_dotenv()
 
 # Configurações (usando variáveis de ambiente):
 # SERVER_URL CORRIGIDO: Agora DEVE ser o endereço HTTP/HTTPS do SEU SERVIDOR WEB no Render.com!
-SERVER_URL = os.environ.get("SERVER_URL") or "https://mgs-rmu0.onrender.com"  # <--- **VERIFIQUE SE ESTE É O URL CORRETO DO SEU SERVIDOR NO RENDER.COM!**
+SERVER_URL = os.environ.get("SERVER_URL") or "https://mgs-qpbo.onrender.com"  # <--- **VERIFIQUE SE ESTE É O URL CORRETO DO SEU SERVIDOR NO RENDER.COM!**
 DISCORD_LINK = os.environ.get("DISCORD_LINK") or "https://discord.gg/9Z5m4zk9"
 LOGO_PATH = os.environ.get("LOGO_PATH") or "logo.png"
 BACKGROUND_PATH = os.environ.get("BACKGROUND_PATH") or "background.png"
@@ -40,9 +41,13 @@ ENCRYPTION_KEY_ENCODED = base64.urlsafe_b64encode(ENCRYPTION_KEY_BYTES)
 
 cipher_suite = Fernet(ENCRYPTION_KEY_ENCODED)
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
 # Função para obter identificadores únicos do hardware (HWID)
 def obter_identificadores_hardware():
     try:
+        return str(uuid.uuid4())
         # Obter UUID da placa-mãe
         uuid_hw = subprocess.check_output("wmic csproduct get UUID", shell=True).decode().split("\n")[1].strip()
 
@@ -59,38 +64,32 @@ def obter_identificadores_hardware():
         print(f"Erro ao obter identificadores de hardware: {e}")
         return None
 
-# Funções para comunicação com o servidor (CORRIGIDAS para usar SERVER_URL HTTP!)
-def ativar_chave_com_servidor(key, hwid, usuario):  # MODIFICADO: Aceita 'usuario'
+def registrar_usuario(usuario, senha, hwid):
     try:
-        # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /register
-        response = requests.post(f"{SERVER_URL}/register", json={"key": key, "hwid": hwid, "username": usuario})  # MODIFICADO: Envia 'usuario' como 'username'
-        response.raise_for_status()  # Verifica se houve erros HTTP na resposta
-        data = response.json()
-        return data["success"], data["message"]
-    except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar ao servidor (ativar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
-        if e.response is not None:
-            print(f"Resposta de erro do servidor (ativar_chave_com_servidor): {e.response.status_code} - {e.response.text}")
-        return False, "Erro ao conectar ao servidor para registro." # Mensagem de erro mais clara
-    except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da resposta (ativar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
-        return False, "Erro ao processar resposta do servidor (JSON inválido no registro)." # Mensagem de erro mais clara
+        response = requests.post(f"{SERVER_URL}/register", json={
+            "key": senha,  # Usando a senha como chave de acesso (ajuste conforme necessário)
+            "hwid": hwid,
+            "username": usuario
+        })
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("success", False), data.get("message", "Resposta desconhecida")
+        else:
+            return False, f"Erro no servidor: {response.status_code}"
+    except Exception as e:
+        return False, f"Erro ao conectar ao servidor: {e}"
 
-def validar_chave_com_servidor(usuario, hwid):  # MODIFICADO: 'key' agora é 'usuario' para login
+# Funções para comunicação com o servidor (CORRIGIDAS para usar SERVER_URL HTTP!)
+def validar_chave_com_servidor(usuario, hwid):
     try:
-        # URL CORRIGIDA: Usa SERVER_URL (HTTP/HTTPS) e endpoint /validate_key (corrigido no server.py)
-        response = requests.post(f"{SERVER_URL}/validate_key", json={"key": usuario, "hwid": hwid})  # MODIFICADO: Envia 'usuario' como 'key'
-        response.raise_for_status()  # Verifica se houve erros HTTP na resposta
-        data = response.json()
-        return data["success"], data["message"]
-    except requests.exceptions.RequestException as e:
-        print(f"Erro ao conectar ao servidor (validar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
-        if e.response is not None:
-            print(f"Resposta de erro do servidor (validar_chave_com_servidor): {e.response.status_code} - {e.response.text}")
-        return False, "Erro ao conectar ao servidor para login." # Mensagem de erro mais clara
-    except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da resposta (validar_chave_com_servidor): {e}") # Mensagem de erro mais descritiva
-        return False, "Erro ao processar resposta do servidor (JSON inválido no login)." # Mensagem de erro mais clara
+        response = requests.post(f"{SERVER_URL}/validate_key", json={"key": usuario, "hwid": hwid})
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("success", False), data.get("message", "Resposta desconhecida")
+        else:
+            return False, f"Erro no servidor: {response.status_code}"
+    except Exception as e:
+        return False, f"Erro ao conectar ao servidor: {e}"
 
 # Função para testar a conexão com o servidor (CORRIGIDA para usar SERVER_URL HTTP!)
 def testar_conexao_servidor(): # REMOVIDA DO MENU PRINCIPAL
@@ -193,142 +192,91 @@ class RegisterButton:
             activeforeground="black"
         ).pack(pady=0) # Removido pady do botão, padding no frame
 
-# Classe do Menu Principal
+# Configuração de Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Configurações (usando variáveis de ambiente)
+SERVER_URL = os.environ.get("SERVER_URL") or "https://mgs-qpbo.onrender.com"
+
+
+def obter_identificadores_hardware():
+    return str(uuid.uuid4())
+
+
+def validar_chave_com_servidor(usuario, hwid):
+    try:
+        response = requests.post(f"{SERVER_URL}/validate_key", json={"key": usuario, "hwid": hwid})
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("success", False), data.get("message", "Resposta desconhecida")
+        else:
+            return False, f"Erro no servidor: {response.status_code}"
+    except Exception as e:
+        return False, f"Erro ao conectar ao servidor: {e}"
+
+
 class MainMenu:
     def __init__(self, root, app):
         self.root = root
         self.app = app
-        self.tela_login()
 
-    def tela_login(self):
-        self.login_frame = tk.Frame(self.root, bg="#1E1E1E")
-        self.login_frame.pack(fill="both", expand=True)
-        VisualManager.carregar_fundo(self.login_frame)
-        VisualManager.carregar_logo(self.login_frame) # Logo no menu principal
+        # Widgets
+        self.usuario_label = tk.Label(root, text="Usuário:")
+        self.usuario_label.pack()
+        self.usuario_entry = tk.Entry(root)
+        self.usuario_entry.pack()
 
-        # Título
-        tk.Label(
-            self.login_frame,
-            text="MIL GRAU SHOP - SPOOFER 1 CLICK",
-            fg="#00D4FF",
-            bg="#1E1E1E",
-            font=("Arial", 12, "bold"), # Menor fonte
-        ).pack(pady=5) # Menor pady
+        self.senha_label = tk.Label(root, text="Senha:")
+        self.senha_label.pack()
+        self.senha_entry = tk.Entry(root, show="*")
+        self.senha_entry.pack()
 
-        # Frame para agrupar campos de login/senha e fundo preto
-        login_fields_frame = tk.Frame(self.login_frame, bg="#1E1E1E") # Frame Preto semi-transparente
-        login_fields_frame.pack(pady=5) # Menor pady
+        self.login_button = tk.Button(root, text="Login", command=self.fazer_login)
+        self.login_button.pack()
 
-        # Entrada para Nome de Usuário
-        self.usuario_entry = tk.Entry(login_fields_frame, bg="#2E2E2E", fg="white", font=("Arial", 9), insertbackground="white", width=18) # Menor e mais estreito
-        self.usuario_entry.config(show=None) # Para mostrar texto normalmente
-        self.usuario_entry.pack(pady=2, padx=5, fill='x') # Menor pady/padx
-
-        # Rótulo "Usuário" acima da entrada
-        tk.Label(login_fields_frame, text="Usuário:", fg="#A0A0A0", bg="#1E1E1E", font=("Arial", 8)).pack() # Menor fonte
-
-        # Entrada para Senha
-        self.senha_entry = tk.Entry(login_fields_frame, show="*", bg="#2E2E2E", fg="white", font=("Arial", 9), insertbackground="white", width=18) # Menor e mais estreito
-        self.senha_entry.pack(pady=2, padx=5, fill='x') # Menor pady/padx
-
-        # Rótulo "Senha" acima da entrada
-        tk.Label(login_fields_frame, text="Senha:", fg="#A0A0A0", bg="#1E1E1E", font=("Arial", 8)).pack() # Menor fonte
-
-        button_login_bg_frame = tk.Frame(self.login_frame, bg="#1E1E1E") # Frame Preto semi-transparente - SEM BD PARA FICAR CLEAN
-        button_login_bg_frame.pack(pady=2) # Menor pady
-        login_button = tk.Button(
-            button_login_bg_frame, # Botão dentro do frame preto
-            text="🔑 Login",
-            fg="black",
-            bg="#00D4FF",
-            font=("Arial", 9, "bold"), # Menor fonte
-            command=self.fazer_login,
-            width=16, # Mais Menor
-            height=1,
-            relief="ridge",
-            bd=0, # REMOVIDO BORDA DO BOTÃO PARA FICAR MAIS CLEAN
-            pady=3, # Mais Menor
-            padx=6, # Mais Menor
-            highlightbackground="#1E1E1E", # Cor de fundo para 'relief' e 'bd' se necessário
-            highlightcolor="#1E1E1E",
-            borderwidth=0, # Remova a borda padrão se desejar um visual mais 'flat'
-            activebackground="#70FFEF", # Cor ao clicar
-            activeforeground="black"
-        )
-        login_button.pack(pady=0) # Removido pady do botão, padding no frame
-
-        RegisterButton(self.login_frame, self.fazer_registro)
-
-        button_discord_bg_frame = tk.Frame(self.login_frame, bg="#1E1E1E") # Frame Preto semi-transparente - SEM BD PARA FICAR CLEAN
-        button_discord_bg_frame.pack(pady=2) # Menor pady
-        tk.Button(
-            button_discord_bg_frame, # Botão dentro do frame preto
-            text="💬 Suporte no Discord",
-            fg="white",
-            bg="#5865F2",
-            font=("Arial", 9, "bold"), # Menor fonte
-            command=InfoManager.abrir_discord,
-            width=16, # Mais Menor
-            height=1,
-            relief="ridge",
-            bd=0,  # REMOVIDO BORDA DO BOTÃO PARA FICAR MAIS CLEAN
-            pady=3, # Mais Menor
-            padx=6, # Mais Menor
-            highlightbackground="#1E1E1E", # Cor de fundo para 'relief' e 'bd' se necessário
-            highlightcolor="#1E1E1E",
-            borderwidth=0, # Remova a borda padrão se desejar um visual mais 'flat'
-            activebackground="#70FFEF", # Cor ao clicar
-            activeforeground="black"
-        ).pack(pady=0) # Removido pady do botão, padding no frame
-
-        # Bind Enter key para logar quando foco estiver no campo de senha
-        self.senha_entry.bind('<Return>', lambda event=None: self.fazer_login())
-        # Bind Enter key para logar quando foco estiver no campo de usuario (opcional, mais amigavel)
-        self.usuario_entry.bind('<Return>', lambda event=None: self.fazer_login())
-
+        # Bind Enter key
+        self.usuario_entry.bind("<Return>", lambda event=None: self.fazer_login())
 
     def fazer_login(self):
-        usuario = self.usuario_entry.get() # Obtém o usuário da Entry
-        senha = self.senha_entry.get() # Obtém a senha da Entry
+        usuario = self.usuario_entry.get()  # Obtém o usuário da Entry
+        senha = self.senha_entry.get()  # Obtém a senha da Entry
         hwid = obter_identificadores_hardware()
+
+        logging.info(f"Tentativa de login: usuario={usuario}, hwid={hwid}")
 
         # ADMIN LOGIN - REMOVER ISSO EM PRODUÇÃO POR SEGURANÇA!!!
         if usuario == "socafofoh" and senha == "Chamego321":
+            logging.info("Login de ADMIN realizado com sucesso.")
             messagebox.showinfo("Sucesso", "✅ Login de ADMIN realizado com sucesso!")
             self.app.usuario_logado = usuario
             self.root.destroy()
             self.app.abrir_tela_spoofing()
             return
 
-        # **CORREÇÃO DO LOGIN:** Validar chave COM usuário e senha (ambos são importantes!)
-        success, message = validar_chave_com_servidor(usuario, hwid) # <--- USANDO APENAS USUARIO PARA VALIDAR (CONFORME A FUNÇÃO)
-        if not success:
-            messagebox.showerror("Erro", f"⚠️ {message}")
-            return
-        messagebox.showinfo("Sucesso", "✅ Login realizado com sucesso!")
-        self.app.usuario_logado = usuario
-        self.root.destroy()
-        self.app.abrir_tela_spoofing()
+        # Validar chave com o servidor
+        success, message = validar_chave_com_servidor(usuario, hwid)
+        if success:
+            logging.info("Login validado com sucesso.")
+            messagebox.showinfo("Sucesso", "✅ Login realizado com sucesso!")
+            self.app.usuario_logado = usuario
+            self.root.destroy()
+            self.app.abrir_tela_spoofing()
+        else:
+            logging.warning(f"Falha no login: {message}")
+            messagebox.showerror("Erro", f"❌ Falha no login: {message}")
 
-    def fazer_registro(self):
-        usuario = RegisterScreen.registrar()
-        if usuario:
-            self.fazer_login()
 
-# Classe do Menu do Spoofer
 class SpooferApp:
     def __init__(self, root):
         self.root = root
         self.root.title("MIL GRAU SHOP - SPOOFER 1 CLICK")
-        VisualManager.carregar_fundo(self.root) # Carrega o fundo para obter as dimensões
-        bg_width, bg_height = self.root.background_size # Obtém as dimensões do background carregado
-        self.root.geometry(f"{bg_width}x{bg_height}") # Define a geometria da janela principal = tamanho do background
         self.main_menu = MainMenu(root, self)
         self.usuario_logado = None  # Inicializa usuario_logado
 
     def abrir_tela_spoofing(self):
         spoof_window = tk.Tk()
         spoof_window.title("Menu do Spoofer")
+        spoof_window.mainloop()
         # VisualManager.carregar_fundo(spoof_window, apply_background=True) # Carrega o fundo no menu spoofer!  <--- BACKGROUND AINDA REMOVIDO!
         default_width = 500 # <--- DIMENSÕES PADRÃO
         default_height = 380 # <--- DIMENSÕES PADRÃO
