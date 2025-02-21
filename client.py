@@ -31,7 +31,8 @@ logging.basicConfig(
     ]
 )
 # Configurações da API
-API_URL = "https://mgs-qpbo.onrender.com"  # Ajuste conforme sua configuração
+API_URL = "https://mgs-qpbo.onrender.com"  # Para desenvolvimento local
+# API_URL = "https://mgs-qpbo.onrender.com"  # Para produção
 TIMEOUT = 10  # Reduzido para 10 segundos
 # Adicione constantes no início do arquivo
 ADMIN_CREDENTIALS = {"adm1": "adm1"}
@@ -94,10 +95,9 @@ def get_hwid():
 
 def verificar_conexao():
     try:
-        response = requests.get(API_URL, timeout=TIMEOUT, verify=True)
+        response = requests.get(f"{API_URL}/health", timeout=TIMEOUT)
         return response.status_code == 200
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Erro de conexão: {e}")
+    except:
         return False
 
 DATABASE_URL = os.getenv('DATABASE_URL')  # Pega do ambiente do Render
@@ -267,20 +267,14 @@ class MainWindow(QWidget):
 
     def fazer_login(self):
         try:
-            # Adiciona headers corretos
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            }
-
             response = requests.post(
-                f"{API_URL}/api/v1/login",
+                f"{API_URL}/login",  # URL correta
                 json={
                     "username": self.usuario.text(),
                     "password": self.senha.text(),
                     "hwid": get_hwid()
                 },
-                headers=headers,  # Adiciona os headers
+                headers={'Content-Type': 'application/json'},
                 timeout=TIMEOUT
             )
 
@@ -1282,7 +1276,7 @@ def load_keys():
         env_secret = os.getenv("SECRET_KEY")
         env_encryption = os.getenv("ENCRYPTION_KEY")
         
-        if env_secret and env_encryption:
+        if env_secret & env_encryption:
             SECRET_KEY = env_secret.encode()
             ENCRYPTION_KEY = env_encryption.encode()
         else:

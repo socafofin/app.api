@@ -29,8 +29,6 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 
 CHAVES_VALIDAS = []
 
-API_PREFIX = '/api/v1'
-
 port = int(os.environ.get("PORT", 5000))
 
 @app.before_request
@@ -121,7 +119,7 @@ def generate_keys():
         if conn:
             conn.close()
 
-@app.route(f'{API_PREFIX}/register', methods=['POST'])
+@app.route('/register', methods=['POST'])
 def register_user():
     data = request.get_json()
     key = data.get('key')
@@ -223,80 +221,93 @@ def validate_key():
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
 
 # 1. Modifique a rota de login para corresponder ao client
-@app.route(f'{API_PREFIX}/login', methods=['POST'])
+@app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    hwid = data.get('hwid')
-
-    if not all([username, password, hwid]):
-        return jsonify({
-            "success": False,
-            "message": "Dados incompletos"
-        }), 400
-
     try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        
-        # Verifica usuário
-        cur.execute("""
-            SELECT id, password, is_admin, hwid 
-            FROM users 
-            WHERE username = %s
-        """, (username,))
-        
-        result = cur.fetchone()
-        
-        if not result:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        hwid = data.get('hwid')
+
+        if not all([username, password, hwid]):
             return jsonify({
                 "success": False,
-                "message": "Usuário não encontrado"
-            }), 401
+                "message": "Dados incompletos"
+            }), 400
 
-        user_id, stored_password, is_admin, stored_hwid = result
+        # Log para debug
+        logging.info(f"Tentativa de login - Usuario: {username}, HWID: {hwid}")
 
-        # Verifica senha
-        if stored_password != password:
-            return jsonify({
-                "success": False,
-                "message": "Senha incorreta"
-            }), 401
-
-        # Verifica/atualiza HWID
-        if not stored_hwid:
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+            
+            # Verifica usuário
             cur.execute("""
-                UPDATE users 
-                SET hwid = %s 
-                WHERE id = %s
-            """, (hwid, user_id))
-            conn.commit()
-        elif stored_hwid != hwid:
+                SELECT id, password, is_admin, hwid 
+                FROM users 
+                WHERE username = %s
+            """, (username,))
+            
+            result = cur.fetchone()
+            
+            if not result:
+                return jsonify({
+                    "success": False,
+                    "message": "Usuário não encontrado"
+                }), 401
+
+            user_id, stored_password, is_admin, stored_hwid = result
+
+            # Verifica senha
+            if stored_password != password:
+                return jsonify({
+                    "success": False,
+                    "message": "Senha incorreta"
+                }), 401
+
+            # Verifica/atualiza HWID
+            if not stored_hwid:
+                cur.execute("""
+                    UPDATE users 
+                    SET hwid = %s 
+                    WHERE id = %s
+                """, (hwid, user_id))
+                conn.commit()
+            elif stored_hwid != hwid:
+                return jsonify({
+                    "success": False,
+                    "message": "Dispositivo não autorizado"
+                }), 401
+
+            return jsonify({
+                "success": True,
+                "isAdmin": is_admin,
+                "username": username
+            })
+
+        except psycopg2.Error as e:
+            logging.error(f"Erro de banco de dados: {str(e)}")
             return jsonify({
                 "success": False,
-                "message": "Dispositivo não autorizado"
-            }), 401
-
-        return jsonify({
-            "success": True,
-            "isAdmin": is_admin,
-            "username": username
-        })
+                "message": "Erro interno do servidor"
+            }), 500
+        finally:
+            if 'cur' in locals():
+                cur.close()
+            if 'conn' in locals():
+                conn.close()
 
     except Exception as e:
+        logging.error(f"Requisição que causou o erro: {request.method} {request.url}")
+        logging.error(f"Dados JSON recebidos: {data}")
         logging.error(f"Erro no login: {str(e)}")
         return jsonify({
             "success": False,
-            "message": "Erro interno do servidor"
+            "message": f"Erro interno do servidor: {str(e)}"
         }), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
 
-@app.route(f'{API_PREFIX}/health', methods=['GET'])
+@app.route('/health', methods=['GET'])
 def health_check():
     try:
         # Verifica conexão com banco
