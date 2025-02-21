@@ -139,6 +139,75 @@ def validate_key():
         logging.error(f"Erro ao validar chave/usuário: {e}")
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
 
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    hwid = data.get('hwid')
+
+    if not all([username, password, hwid]):
+        logging.warning(f"Tentativa de login com dados incompletos: {data}")
+        return jsonify({
+            "success": False,
+            "message": "Dados incompletos"
+        }), 400
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        
+        # Verifica usuário e senha
+        cur.execute("""
+            SELECT is_admin, hwid 
+            FROM users 
+            WHERE username = %s AND password = %s
+        """, (username, password))
+        
+        result = cur.fetchone()
+        
+        if not result:
+            logging.warning(f"Login falhou para usuário: {username}")
+            return jsonify({
+                "success": False,
+                "message": "Usuário ou senha inválidos"
+            }), 401
+
+        is_admin, stored_hwid = result
+
+        # Se o HWID ainda não foi registrado, atualize-o
+        if not stored_hwid:
+            cur.execute("""
+                UPDATE users 
+                SET hwid = %s 
+                WHERE username = %s
+            """, (hwid, username))
+            conn.commit()
+        # Se já existe um HWID, verifique se corresponde
+        elif stored_hwid != hwid:
+            logging.warning(f"HWID não corresponde para usuário: {username}")
+            return jsonify({
+                "success": False,
+                "message": "Dispositivo não autorizado"
+            }), 401
+
+        cur.close()
+        conn.close()
+
+        logging.info(f"Login bem sucedido para usuário: {username}")
+        return jsonify({
+            "success": True,
+            "isAdmin": is_admin,
+            "username": username
+        })
+
+    except Exception as e:
+        logging.error(f"Erro no login: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Erro interno: {str(e)}"
+        }), 500
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     logging.error(f"Erro não tratado: {str(e)}", exc_info=True)

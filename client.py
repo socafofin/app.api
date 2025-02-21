@@ -213,8 +213,11 @@ class MainWindow(QWidget):
 
             if response.status_code == 200:
                 data = response.json()
-                self.is_admin = data.get("isAdmin", False)
-                self.login_sucesso()
+                if data.get("success"):
+                    self.is_admin = data.get("isAdmin", False)
+                    self.login_sucesso()
+                else:
+                    self.mostrar_erro(data.get("message", "Erro ao fazer login"))
             else:
                 self.mostrar_erro('Usuário ou senha inválidos!')
         except Exception as e:
