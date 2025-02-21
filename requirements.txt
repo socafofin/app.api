@@ -1,9 +1,5 @@
-PyQt5==5.15.9
-requests==2.31.0
+Flask==2.0.1
+flask-cors==3.0.10
+psycopg2-binary==2.9.9
 python-dotenv==1.0.0
-Pillow
-cryptography
-python-dotenv
-Flask
-psycopg2-binary
-pytz
+gunicorn==20.1.0

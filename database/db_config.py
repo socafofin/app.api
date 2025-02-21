@@ -1,10 +1,26 @@
 import os
-from dotenv import load_dotenv
 import psycopg2
+from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+class Database:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.DATABASE_URL = os.getenv("DATABASE_URL")
+        return cls._instance
+    
+    def get_connection(self):
+        try:
+            conn = psycopg2.connect(self.DATABASE_URL)
+            return conn
+        except Exception as e:
+            print(f"Erro ao conectar ao banco: {e}")
+            return None
 
-def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+# Instância global
+db = Database()
+get_connection = db.get_connection

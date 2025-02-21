@@ -6,8 +6,6 @@ import secrets
 import datetime
 import logging
 import time
-# Importe o config do banco
-from database.db_config import get_connection
 
 load_dotenv()
 
@@ -15,6 +13,8 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+CHAVES_VALIDAS = []
 
 @app.before_request
 def start_timer():
@@ -39,54 +39,34 @@ def ping():
 
 @app.route('/generate_keys', methods=['POST'])
 def generate_keys():
-    data = request.get_json()
-    username = data.get('username')
-    
+    logging.debug("Endpoint /generate_keys acessado.")
+    quantidade = request.json.get('quantidade', 1)
+    duracao_dias = request.json.get('duracao_dias', 30)
+    logging.debug(f"Quantidade solicitada: {quantidade}, Duração (dias): {duracao_dias}")
+
+    if not isinstance(quantidade, int) or quantidade <= 0:
+        logging.warning("Quantidade inválida fornecida.")
+        return jsonify({"success": False, "message": "Quantidade inválida. Deve ser um número inteiro positivo."}), 400
+    if not isinstance(duracao_dias, int) or duracao_dias <= 0:
+        logging.warning("Duração inválida fornecida.")
+        return jsonify({"success": False, "message": "Duração inválida. Deve ser um número inteiro positivo de dias."}), 400
+
+    chaves_geradas = []
     try:
-        conn = get_connection()
+        conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        
-        # Verifica se o usuário é admin
-        cur.execute("SELECT is_admin FROM users WHERE username = %s", (username,))
-        result = cur.fetchone()
-        
-        if not result or not result[0]:
-            return jsonify({
-                "success": False, 
-                "message": "Apenas administradores podem gerar keys"
-            }), 403
-
-        # Gera a key
-        key = f"MGSP-{secrets.token_hex(8).upper()}"
-        expiration = datetime.datetime.now() + datetime.timedelta(days=30)
-        
-        # Insere a key no banco
-        cur.execute("""
-            INSERT INTO keys (key, generated_by, expires_at) 
-            VALUES (%s, %s, %s)
-            RETURNING key
-        """, (key, username, expiration))
-        
-        new_key = cur.fetchone()[0]
+        for _ in range(quantidade):
+            chave = secrets.token_urlsafe(32)
+            data_expiracao = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
+            cur.execute("INSERT INTO keys (chave, expira_em) VALUES (%s, %s)", (chave, data_expiracao))
+            chaves_geradas.append({"chave": chave, "expira_em": data_expiracao.isoformat()})
         conn.commit()
-        
-        return jsonify({
-            "success": True,
-            "message": "Key gerada com sucesso",
-            "key": new_key
-        }), 201
-
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "message": f"{quantidade} chaves geradas com sucesso.", "chaves": chaves_geradas})
     except Exception as e:
-        logging.error(f"Erro ao gerar key: {e}")
-        return jsonify({
-            "success": False,
-            "message": f"Erro ao gerar key: {str(e)}"
-        }), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+        logging.error(f"Erro ao gerar chaves: {e}")
+        return jsonify({"success": False, "message": f"Erro ao gerar chaves: {e}"}), 500
 
 @app.route('/register', methods=['POST'])
 def register_user():
@@ -99,7 +79,7 @@ def register_user():
         return jsonify({"success": False, "message": "Dados incompletos fornecidos."}), 400
 
     try:
-        conn = get_connection()
+        conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         cur.execute("SELECT id, expira_em, usada FROM keys WHERE chave = %s", (key,))
         chave_info = cur.fetchone()
@@ -112,7 +92,7 @@ def register_user():
         if usada or datetime.datetime.now() > expira_em:
             return jsonify({"success": False, "message": "Chave de acesso inválida ou expirada."}), 401
 
-        cur.execute("INSERT INTO users (access_key, hwid, username, data_registro, data_expiracao) VALUES (%s, %s, %s, %s, %s)",
+        cur.execute("INSERT INTO users (key, hwid, username, created_at, expires_at) VALUES (%s, %s, %s, %s, %s)",
                     (key, hwid, usuario, datetime.datetime.now(), expira_em))
         cur.execute("UPDATE keys SET hwid = %s, usada = TRUE WHERE id = %s", (hwid, chave_id))
         conn.commit()
@@ -126,20 +106,16 @@ def register_user():
 @app.route('/validate_key', methods=['POST'])
 def validate_key():
     data = request.get_json()
-    chave = data.get('chave')
-    usuario = data.get('key')  # Usando 'key' como 'usuario'
+    key = data.get('key')
     hwid = data.get('hwid')
 
-    if chave == 'invalida':
-        return jsonify({'error': 'Chave inválida'}), 400
-
-    if not usuario or not hwid:
+    if not key or not hwid:
         return jsonify({"success": False, "message": "Dados incompletos fornecidos."}), 400
 
     try:
-        conn = get_connection()
+        conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT data_expiracao FROM users WHERE username = %s AND hwid = %s", (usuario, hwid))
+        cur.execute("SELECT data_expiracao FROM users WHERE access_key = %s AND hwid = %s", (key, hwid))
         result = cur.fetchone()
         cur.close()
         conn.close()
@@ -147,40 +123,14 @@ def validate_key():
         if result:
             data_expiracao_db = result[0]
             if datetime.datetime.now() <= data_expiracao_db:
-                logging.info(f"Usuário '{usuario}' validado com sucesso.")
                 return jsonify({"success": True, "message": "Chave/Usuário válido!"})
             else:
-                logging.warning(f"Chave/Usuário '{usuario}' expirado.")
                 return jsonify({"success": False, "message": "Chave/Usuário expirado."}), 401
         else:
-            logging.warning(f"Tentativa de login inválida para usuário '{usuario}'.")
-            return jsonify({"success": False, "message": "Usuário/Chave inválido ou não registrado para este HWID."}), 401
+            return jsonify({"success": False, "message": "Usuário/Chave inválido."}), 401
     except Exception as e:
         logging.error(f"Erro ao validar chave/usuário: {e}")
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
-
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    hwid = data.get('hwid')
-    
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT is_admin FROM users WHERE username = %s AND password = %s AND hwid = %s", 
-                   (username, password, hwid))
-        result = cur.fetchone()
-        if result:
-            return jsonify({
-                "success": True,
-                "isAdmin": result[0]
-            })
-        return jsonify({"success": False, "message": "Credenciais inválidas"}), 401
-    finally:
-        cur.close()
-        conn.close()
 
 @app.errorhandler(Exception)
 def handle_exception(e):
