@@ -46,34 +46,61 @@ def ping():
 
 @app.route('/generate_keys', methods=['POST'])
 def generate_keys():
-    logging.debug("Endpoint /generate_keys acessado.")
-    quantidade = request.json.get('quantidade', 1)
-    duracao_dias = request.json.get('duracao_dias', 30)
-    logging.debug(f"Quantidade solicitada: {quantidade}, Duração (dias): {duracao_dias}")
+    data = request.get_json()
+    generated_by = data.get('generatedBy')
+    quantidade = data.get('quantidade', 1)
+    duracao_dias = data.get('duracao_dias', 30)
 
-    if not isinstance(quantidade, int) or quantidade <= 0:
-        logging.warning("Quantidade inválida fornecida.")
-        return jsonify({"success": False, "message": "Quantidade inválida. Deve ser um número inteiro positivo."}), 400
-    if not isinstance(duracao_dias, int) or duracao_dias <= 0:
-        logging.warning("Duração inválida fornecida.")
-        return jsonify({"success": False, "message": "Duração inválida. Deve ser um número inteiro positivo de dias."}), 400
+    logging.info(f"Tentativa de gerar key por: {generated_by}")
 
-    chaves_geradas = []
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        for _ in range(quantidade):
-            chave = secrets.token_urlsafe(32)
-            data_expiracao = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
-            cur.execute("INSERT INTO keys (chave, expira_em) VALUES (%s, %s)", (chave, data_expiracao))
-            chaves_geradas.append({"chave": chave, "expira_em": data_expiracao.isoformat()})
+        
+        # Verifica se o usuário é admin
+        cur.execute("SELECT is_admin FROM users WHERE username = %s", (generated_by,))
+        result = cur.fetchone()
+        
+        if not result or not result[0]:
+            logging.warning(f"Usuário não autorizado tentou gerar key: {generated_by}")
+            return jsonify({
+                "success": False,
+                "message": "Apenas administradores podem gerar keys"
+            }), 403
+
+        # Gera a key
+        key = f"MGSP-{secrets.token_hex(8).upper()}"
+        expiration = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
+        
+        # Insere a key no banco
+        cur.execute("""
+            INSERT INTO keys (key, generated_by, expires_at, used) 
+            VALUES (%s, %s, %s, FALSE)
+            RETURNING key
+        """, (key, generated_by, expiration))
+        
+        new_key = cur.fetchone()[0]
         conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"success": True, "message": f"{quantidade} chaves geradas com sucesso.", "chaves": chaves_geradas})
+        
+        logging.info(f"Key gerada com sucesso por {generated_by}: {new_key}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Key gerada com sucesso",
+            "key": new_key
+        }), 201
+
     except Exception as e:
-        logging.error(f"Erro ao gerar chaves: {e}")
-        return jsonify({"success": False, "message": f"Erro ao gerar chaves: {e}"}), 500
+        logging.error(f"Erro ao gerar key: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao gerar key: {str(e)}"
+        }), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/register', methods=['POST'])
 def register_user():
@@ -146,55 +173,55 @@ def login():
     password = data.get('password')
     hwid = data.get('hwid')
 
-    if not all([username, password, hwid]):
-        logging.warning(f"Tentativa de login com dados incompletos: {data}")
-        return jsonify({
-            "success": False,
-            "message": "Dados incompletos"
-        }), 400
+    logging.info(f"Tentativa de login - Username: {username}, HWID: {hwid}")
 
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Verifica usuário e senha
+        # Primeiro, verifique se o usuário existe
         cur.execute("""
-            SELECT is_admin, hwid 
+            SELECT id, password, is_admin, hwid 
             FROM users 
-            WHERE username = %s AND password = %s
-        """, (username, password))
+            WHERE username = %s
+        """, (username,))
         
         result = cur.fetchone()
         
         if not result:
-            logging.warning(f"Login falhou para usuário: {username}")
+            logging.warning(f"Usuário não encontrado: {username}")
             return jsonify({
                 "success": False,
-                "message": "Usuário ou senha inválidos"
+                "message": "Usuário não encontrado"
             }), 401
 
-        is_admin, stored_hwid = result
+        user_id, stored_password, is_admin, stored_hwid = result
+
+        # Verifique a senha
+        if stored_password != password:
+            logging.warning(f"Senha incorreta para usuário: {username}")
+            return jsonify({
+                "success": False,
+                "message": "Senha incorreta"
+            }), 401
 
         # Se o HWID ainda não foi registrado, atualize-o
         if not stored_hwid:
             cur.execute("""
                 UPDATE users 
                 SET hwid = %s 
-                WHERE username = %s
-            """, (hwid, username))
+                WHERE id = %s
+            """, (hwid, user_id))
             conn.commit()
         # Se já existe um HWID, verifique se corresponde
         elif stored_hwid != hwid:
-            logging.warning(f"HWID não corresponde para usuário: {username}")
+            logging.warning(f"HWID não corresponde - Usuario: {username}, HWID Esperado: {stored_hwid}, HWID Recebido: {hwid}")
             return jsonify({
                 "success": False,
                 "message": "Dispositivo não autorizado"
             }), 401
 
-        cur.close()
-        conn.close()
-
-        logging.info(f"Login bem sucedido para usuário: {username}")
+        logging.info(f"Login bem sucedido - Usuario: {username}, Admin: {is_admin}")
         return jsonify({
             "success": True,
             "isAdmin": is_admin,
@@ -207,6 +234,11 @@ def login():
             "success": False,
             "message": f"Erro interno: {str(e)}"
         }), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.errorhandler(Exception)
 def handle_exception(e):
