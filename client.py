@@ -1282,7 +1282,7 @@ def load_keys():
         env_secret = os.getenv("SECRET_KEY")
         env_encryption = os.getenv("ENCRYPTION_KEY")
         
-        if env_secret environment and env_encryption:
+        if env_secret and env_encryption:
             SECRET_KEY = env_secret.encode()
             ENCRYPTION_KEY = env_encryption.encode()
         else:
