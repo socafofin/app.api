@@ -63,61 +63,69 @@ def ping():
 
 @app.route('/generate_keys', methods=['POST'])
 def generate_keys():
-    data = request.get_json()
-    generated_by = data.get('generatedBy')
-    quantidade = data.get('quantidade', 1)
-    duracao_dias = data.get('duracao_dias', 30)
-
-    logging.info(f"Tentativa de gerar key por: {generated_by}")
-
     try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        
-        # Verifica se o usuário é admin
-        cur.execute("SELECT is_admin FROM users WHERE username = %s", (generated_by,))
-        result = cur.fetchone()
-        
-        if not result or not result[0]:
-            logging.warning(f"Usuário não autorizado tentou gerar key: {generated_by}")
+        data = request.get_json()
+        generated_by = data.get('generatedBy')
+        quantidade = data.get('quantidade', 1)
+        duracao_dias = data.get('duracao_dias', 30)
+
+        logging.info(f"Tentativa de gerar key por: {generated_by}")
+
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+            
+            # Verifica se é admin
+            cur.execute("""
+                SELECT is_admin FROM users 
+                WHERE username = %s
+            """, (generated_by,))
+            
+            result = cur.fetchone()
+            if not result or not result[0]:
+                return jsonify({
+                    "success": False,
+                    "message": "Apenas administradores podem gerar keys"
+                }), 403
+
+            # Gera nova key
+            key = f"MGSP-{''.join(random.choices(string.ascii_uppercase + string.digits, k=16))}"
+            expiration_date = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
+
+            # Salva no banco (note o uso de key_value ao invés de key)
+            cur.execute("""
+                INSERT INTO keys (key_value, expiration_date, generated_by)
+                VALUES (%s, %s, %s)
+                RETURNING key_value
+            """, (key, expiration_date, generated_by))
+            
+            conn.commit()
+
+            return jsonify({
+                "success": True,
+                "key": key,
+                "expiration_date": expiration_date.isoformat()
+            }), 201
+
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Erro ao gerar key: {str(e)}")
             return jsonify({
                 "success": False,
-                "message": "Apenas administradores podem gerar keys"
-            }), 403
-
-        # Gera a key
-        key = f"MGSP-{secrets.token_hex(8).upper()}"
-        expiration = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
-        
-        # Insere a key no banco
-        cur.execute("""
-            INSERT INTO keys (key, generated_by, expires_at, used) 
-            VALUES (%s, %s, %s, FALSE)
-            RETURNING key
-        """, (key, generated_by, expiration))
-        
-        new_key = cur.fetchone()[0]
-        conn.commit()
-        
-        logging.info(f"Key gerada com sucesso por {generated_by}: {new_key}")
-        
-        return jsonify({
-            "success": True,
-            "message": "Key gerada com sucesso",
-            "key": new_key
-        }), 201
+                "message": "Erro ao gerar key"
+            }), 500
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
 
     except Exception as e:
-        logging.error(f"Erro ao gerar key: {e}")
+        logging.error(f"Erro no endpoint generate_keys: {str(e)}")
         return jsonify({
             "success": False,
-            "message": f"Erro ao gerar key: {str(e)}"
+            "message": f"Erro interno: {str(e)}"
         }), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
 
 @app.route('/register', methods=['POST'])
 def register_user():

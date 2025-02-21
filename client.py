@@ -268,7 +268,7 @@ class MainWindow(QWidget):
     def fazer_login(self):
         try:
             response = requests.post(
-                f"{API_URL}/login",  # URL correta
+                f"{API_URL}/login",
                 json={
                     "username": self.usuario.text(),
                     "password": self.senha.text(),
@@ -282,9 +282,9 @@ class MainWindow(QWidget):
                 data = response.json()
                 if data.get("success"):
                     self.is_admin = data.get("isAdmin", False)
-                    self.mostrar_sucesso("Login realizado com sucesso!")
+                    self.mostrar_sucesso("Login realizado com sucesso!")  # Usa a nova função
                     return True
-            
+        
             self.mostrar_erro(f"Erro: {response.json().get('message', 'Erro desconhecido')}")
             return False
 
@@ -618,6 +618,28 @@ class MainWindow(QWidget):
             return response.json().get("expired", True)
         except:
             return True
+
+    def mostrar_sucesso(self, mensagem):
+        """Mostra mensagem de sucesso"""
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle('Sucesso')
+        msg.setText(mensagem)
+        msg.setStyleSheet('''
+            QMessageBox {
+                background-color: #1a0058;
+                color: #00ff99;  /* Verde água */
+            }
+            QPushButton {
+                background: #00ffff;
+                color: black;
+                border: none;
+                padding: 6px 20px;
+                border-radius: 8px;
+            }
+        ''')
+        msg.exec_()
+        self.login_sucesso()  # Chama função após login bem sucedido
 
 class TelaInicial(QWidget):
     def __init__(self, is_admin=False):
