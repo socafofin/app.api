@@ -1,6 +1,7 @@
 import os
 import psycopg2
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
 
@@ -38,7 +39,7 @@ class Database:
             )
             return conn
         except Exception as e:
-            print(f"Erro ao conectar ao banco: {e}")
+            logging.error(f"Erro de conexão: {e}")
             return None
 
     def test_key_table(self):
