@@ -1,29 +1,27 @@
-import requests
-import json
-import hashlib
-from datetime import datetime
+import os
 import sys
-from PyQt5.QtWidgets import (QApplication, QWidget, QLineEdit, QPushButton, 
-                            QVBoxLayout, QLabel, QMessageBox, QFrame, QProgressBar, QCheckBox, QStackedWidget, QHBoxLayout)
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QIcon, QMovie, QFontDatabase, QPixmap
-from PyQt5.QtCore import QPropertyAnimation, QPoint, QEasingCurve
-import math
-from PyQt5.QtCore import pyqtProperty
-import subprocess
+import base64
+import hashlib
 import logging
-import shutil
 import random
+import shutil
+import socket
+import subprocess
 import time
 import warnings
-import os
-import base64
+from datetime import datetime
+from tendo import singleton
+import requests
+
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-import psycopg2
-import socket
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+from PyQt5.QtWidgets import (QApplication, QWidget, QLineEdit, QPushButton, 
+                           QVBoxLayout, QLabel, QMessageBox, QFrame, 
+                           QProgressBar, QCheckBox, QStackedWidget, QHBoxLayout)
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QPoint, QEasingCurve, pyqtProperty
+from PyQt5.QtGui import QFont, QIcon, QMovie, QFontDatabase, QPixmap
 
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -32,155 +30,41 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
 # Configurações da API
 API_URL = "https://mgs-qpbo.onrender.com"  # Ajuste conforme sua configuração
 TIMEOUT = 10  # Reduzido para 10 segundos
-
 # Adicione constantes no início do arquivo
 ADMIN_CREDENTIALS = {"adm1": "adm1"}
 USER_CREDENTIALS = {"test1": "test1"}
 VALID_KEYS = ['MGSP-2024', 'CYBER-2024', 'HACK-2024']
-
 # Constantes para recursos visuais
 RESOURCES_PATH = "resources"
 LOGO_PATH = os.path.join(RESOURCES_PATH, "logo.png")
 ICON_PATH = os.path.join(RESOURCES_PATH, "icon.ico") 
 BACKGROUND_PATH = os.path.join(RESOURCES_PATH, "background.png")
-
 # Cache do HWID para evitar múltiplas chamadas
 _hwid_cache = None
-
 # Carrega variáveis de ambiente
 load_dotenv()
+# Configurações de segurança
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    SECRET_KEY = Fernet.generate_key()
+    with open(".env", "w") as f:
+        f.write(f"SECRET_KEY={SECRET_KEY.decode()}\n")
+    
+    logging.info("Nova chave secreta gerada e salva em .env")
+cipher_suite = Fernet(SECRET_KEY)
 
-# Configurações do banco de dados
-DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://default:random@localhost:5432/verceldb')
-FALLBACK_KEYS = {
-    'secret_key': Fernet.generate_key(),
-    'encryption_key': base64.urlsafe_b64encode(os.urandom(32))
-}
-
-# Configurações de conexão
-socket.setdefaulttimeout(5)  # Timeout global
-
-# Atualize as configurações do PostgreSQL
-POSTGRES_CONFIG = {
-    'host': 'dpg-cuoi7s52ng1s73e9j6p0-a.singapore-postgres.render.com',
-    'database': 'spoofer_db',
-    'user': 'spoofer_db_user',  # Alterado de default para spoofer_db_user
-    'password': '2c9cad1e831b9de3941b2a96a4df85f92b98',
-    'port': '5432',
-    'sslmode': 'require'
-}
-
-# Construa a URL do banco corretamente
-DATABASE_URL = (
-    f"postgresql://{POSTGRES_CONFIG['user']}:{POSTGRES_CONFIG['password']}"
-    f"@{POSTGRES_CONFIG['host']}:{POSTGRES_CONFIG['port']}"
-    f"/{POSTGRES_CONFIG['database']}?sslmode=require"
-)
-
-# Melhore a função de teste de conexão
-def test_db_connection():
-    try:
-        conn = psycopg2.connect(
-            DATABASE_URL,
-            connect_timeout=10,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5
-        )
-        with conn.cursor() as cur:
-            cur.execute('SELECT 1')
-        conn.close()
-        logging.info("Conexão com banco de dados estabelecida com sucesso")
-        return True
-    except psycopg2.OperationalError as e:
-        logging.error(f"Erro de conexão com o banco: {e}")
-        return False
-    except Exception as e:
-        logging.error(f"Erro inesperado ao conectar ao banco: {e}")
-        return False
-
-# Teste a conexão ao iniciar
-if not test_db_connection():
-    logging.warning("Usando modo fallback local devido a erro de conexão com banco de dados")
-
-def verificar_conexao_banco():
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=3)
-        conn.close()
-        return True
-    except:
-        return False
-
-# Modifique a função get_security_keys
-def get_security_keys():
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-
-        try:
-            cur.execute("""
-                SELECT encode(secret_key, 'base64'), encode(encryption_key, 'base64') 
-                FROM security_keys 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """)
-            result = cur.fetchone()
-
-            if result:
-                secret_key = base64.b64decode(result[0])
-                encryption_key = base64.b64decode(result[1])
-                logging.info("Chaves carregadas do banco com sucesso")
-            else:
-                secret_key = Fernet.generate_key()
-                encryption_key = base64.urlsafe_b64encode(os.urandom(32))
-                
-                cur.execute("""
-                    INSERT INTO security_keys (secret_key, encryption_key)
-                    VALUES (%s, %s)
-                """, (secret_key, encryption_key))
-                conn.commit()
-                logging.info("Novas chaves geradas e salvas no banco")
-
-            return secret_key, encryption_key
-
-        finally:
-            cur.close()
-            conn.close()
-
-    except Exception as e:
-        logging.error(f"Erro ao acessar banco: {e}")
-        return FALLBACK_KEYS['secret_key'], FALLBACK_KEYS['encryption_key']
-
-# Inicialização do cipher com fallback garantido
-try:
-    SECRET_KEY, ENCRYPTION_KEY = get_security_keys()
-    cipher_suite = Fernet(SECRET_KEY)
-except Exception as e:
-    logging.error(f"Erro na inicialização da criptografia: {e}")
-    # Garante que teremos um cipher mesmo com erro
-    cipher_suite = Fernet(FALLBACK_KEYS['secret_key'])
-
-DISCORD_LINK = "https://discord.gg/9Z5m4zk9"
-
-# Função para criptografar strings
+# Funções de criptografia
 def encrypt_string(text):
     return cipher_suite.encrypt(text.encode()).decode()
 
-# Função para descriptografar strings
 def decrypt_string(encrypted_text):
     return cipher_suite.decrypt(encrypted_text.encode()).decode()
 
-# Função para ofuscar código
-def obfuscate_code():
-    if not os.path.exists(".env"):
-        with open(".env", "w") as f:
-            f.write(f"SECRET_KEY={SECRET_KEY.decode()}\n")
-            f.write(f"ENCRYPTION_KEY={ENCRYPTION_KEY.decode()}\n")
+# Configurações de conexão
+socket.setdefaulttimeout(5)  # Timeout global
 
 # Anti-debug e anti-tampering
 def check_security():
@@ -188,7 +72,6 @@ def check_security():
         # Verifica se está rodando em ambiente de debug
         if sys.gettrace() is not None:
             sys.exit(1)
-        
         # Verifica integridade do arquivo
         if not os.path.exists(".env"):
             sys.exit(1)
@@ -215,6 +98,8 @@ def verificar_conexao():
         return True
     except:
         return False
+
+DATABASE_URL = os.getenv('DATABASE_URL')  # Pega do ambiente do Render
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -309,14 +194,13 @@ class MainWindow(QWidget):
         
         for widget in [self.usuario, self.senha, self.btn_login, self.btn_registrar]:
             widget.setStyleSheet(navbar_style)
-
+                
         navbar_layout.addWidget(self.usuario)
         navbar_layout.addWidget(self.senha)
         navbar_layout.addWidget(self.btn_login)
         navbar_layout.addWidget(self.btn_registrar)
         # Adicione outro stretch no final para centralizar
         navbar_layout.addStretch(1)
-
         navbar.setLayout(navbar_layout)
         main_layout.addWidget(navbar)
 
@@ -339,7 +223,6 @@ class MainWindow(QWidget):
                 background: transparent;
             }
         ''')
-
         self.spoofer_text = QLabel('SPOOFER MILGRAU')
         self.spoofer_text.setAlignment(Qt.AlignCenter)
         self.spoofer_text.setStyleSheet('''
@@ -356,10 +239,10 @@ class MainWindow(QWidget):
         welcome_layout.addWidget(self.login_text)
         welcome_layout.addWidget(self.spoofer_text)
         self.welcome_page.setLayout(welcome_layout)
-        
+
         # Página do Spoofer
         self.spoofer_page = QWidget()
-        
+        navbar_layout = QHBoxLayout()
         self.stack.addWidget(self.welcome_page)
         self.stack.addWidget(self.spoofer_page)
         
@@ -382,47 +265,37 @@ class MainWindow(QWidget):
         self.senha.returnPressed.connect(self.fazer_login)
 
     def fazer_login(self):
-        usuario = self.usuario.text()
-        senha = self.senha.text()
-        hwid = get_hwid()
-
         try:
-            self.mostrar_carregamento()
-            senha_hash = hashlib.md5(senha.encode()).hexdigest()
-            
-            # Tenta apenas uma vez com timeout menor
+            username = self.usuario.text()
+            password = self.senha.text()
+            hwid = get_hwid()
+
             response = requests.post(
-                f"{API_URL}/login", 
+                f"{API_URL}/login",
                 json={
-                    "username": usuario,
-                    "password": senha_hash,
+                    "username": username,
+                    "password": password,
                     "hwid": hwid
                 },
-                verify=True,
                 timeout=TIMEOUT
             )
-
-            if hasattr(self, 'loading'):
-                self.loading.deleteLater()
 
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
                     self.is_admin = data.get("isAdmin", False)
-                    self.login_sucesso()
+                    self.mostrar_sucesso("Login realizado com sucesso!")
+                    return True
                 else:
                     self.mostrar_erro(data.get("message", "Erro ao fazer login"))
+                    return False
             else:
-                self.mostrar_erro('Usuário ou senha inválidos!')
-                
+                self.mostrar_erro("Erro de conexão com o servidor")
+                return False
+
         except requests.exceptions.RequestException as e:
-            if hasattr(self, 'loading'):
-                self.loading.deleteLater()
-            self.mostrar_erro('Erro de conexão. Servidor indisponível.')
-        except Exception as e:
-            if hasattr(self, 'loading'):
-                self.loading.deleteLater()
-            self.mostrar_erro(f'Erro: {str(e)}')
+            self.mostrar_erro(f"Erro de conexão: {str(e)}")
+            return False
 
     def login_sucesso(self):
         # Oculta os textos iniciais
@@ -496,7 +369,7 @@ class MainWindow(QWidget):
         self.btn_spoof = QPushButton('SPOOFAR COM 1 CLICK')
         self.btn_guia.setStyleSheet(btn_style)
         self.btn_spoof.setStyleSheet(btn_style)
-        
+
         # Botão exclusivo para admin
         if self.is_admin:
             self.btn_key = QPushButton('GERAR KEY')
@@ -516,7 +389,6 @@ class MainWindow(QWidget):
         
         spoofer_layout.addStretch()
         spoofer_layout.addLayout(buttons_container)
-        
         container.setLayout(spoofer_layout)
         layout.addWidget(container)
         self.spoofer_page.setLayout(layout)
@@ -527,7 +399,6 @@ class MainWindow(QWidget):
             logo_label = QLabel()
             logo_label.setPixmap(logo.scaled(150, 150, Qt.KeepAspectRatio))
             layout.addWidget(logo_label)
-
         if os.path.exists(BACKGROUND_PATH):
             self.setStyleSheet(f'''
                 QWidget {{
@@ -595,7 +466,7 @@ class MainWindow(QWidget):
             self.progress_labels[self.current_step].setStyleSheet('color: #00ffff;')
             self.progress_labels[self.current_step].setText(f'✓ {self.progress_labels[self.current_step].text()[2:]}')
             self.progress_bar.setValue((self.current_step + 1) * 20)
-            self.current_step += 1
+            self.current_step += 1        
             
             if self.current_step == len(self.progress_labels):
                 QTimer.singleShot(1000, self.finish_process)
@@ -640,7 +511,6 @@ class MainWindow(QWidget):
         checkbox.setStyleSheet('color: #00ffff;')
         msg.setCheckBox(checkbox)
         checkbox.stateChanged.connect(lambda state: self.ativar_spoof(state))
-        
         msg.exec_()
 
     def update_border(self, value):
@@ -739,7 +609,7 @@ class MainWindow(QWidget):
                 "chave": key,
                 "username": self.usuario.text(),
                 "hwid": get_hwid()
-            }, verify=True, timeout=5)
+            }, verify=True, timeout=5)        
             return response.status_code == 200
         except:
             return False
@@ -749,7 +619,7 @@ class MainWindow(QWidget):
             response = requests.get(f"{API_URL}/check_expiration", json={
                 "username": self.usuario.text(),
                 "hwid": get_hwid()
-            }, verify=True, timeout=5)
+            }, verify=True, timeout=5)        
             return response.json().get("expired", True)
         except:
             return True
@@ -879,7 +749,7 @@ class TelaInicial(QWidget):
     def gerar_key(self):
         import random
         import string
-        
+
         key = 'MGSP-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=16))
         
         msg = QMessageBox()
@@ -1081,7 +951,7 @@ class TelaSpoofer(QWidget):
     def spoofar(self):
         self.feedback_container.show()
         self.progress_bar.setValue(0)
-        
+
         # Simulação do processo (modo de demonstração)
         steps = [
             ("Iniciando processo de spoofing...", 10),
@@ -1092,13 +962,13 @@ class TelaSpoofer(QWidget):
             ("Alterando registros de hardware...", 80),
             ("Finalizando processo...", 100)
         ]
-        
+
         for step, progress in steps:
             self.status_label.setText(step)
             self.progress_bar.setValue(progress)
             QApplication.processEvents()  # Mantém a interface responsiva
             time.sleep(1)  # Simula processamento
-        
+
         # Mensagem de conclusão
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Information)
@@ -1200,7 +1070,7 @@ class TelaGuia(QWidget):
                 background: #ff00ff;
             }
         ''')
-
+        
         layout = QVBoxLayout()
         
         # Container principal
@@ -1229,8 +1099,7 @@ class TelaGuia(QWidget):
             🔹 Passo 3: Execute o programa como administrador
             🔹 Passo 4: Aguarde o processo completar
             🔹 Passo 5: Reinicie o computador
-            
-            ⚠️ ATENÇÃO: Este processo é irreversível!
+             ⚠️ ATENÇÃO: Este processo é irreversível!
         ''')
         guia_texto.setWordWrap(True)
         guia_texto.setStyleSheet('font-size: 16px; padding: 20px;')
@@ -1334,27 +1203,35 @@ class TelaRegistro(QWidget):
 
 if __name__ == '__main__':
     try:
-        # Verifica segurança antes de iniciar
+        # Inicializa logging primeiro
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('spoofer.log'),
+                logging.StreamHandler()
+            ]
+        )
+
+        # Carrega variáveis de ambiente
+        load_dotenv()
+        
+        # Verifica segurança
         check_security()
         
-        # Inicializa criptografia
-        obfuscate_code()
-        
-        # Inicia aplicação com proteções
+        # Inicializa a aplicação
         app = QApplication(sys.argv)
         app.setStyle('Fusion')
         
-        # Previne múltiplas instâncias
-        from tendo import singleton
-        me = singleton.SingleInstance()
-        
-        # Inicia interface com proteções
-        tela = MainWindow()
-        tela.setWindowIcon(QIcon(ICON_PATH))
-        tela.show()
+        # Inicia interface
+        window = MainWindow()
+        window.setWindowIcon(QIcon(ICON_PATH))
+        window.show()
         
         sys.exit(app.exec_())
-    except:
+        
+    except Exception as e:
+        logging.error(f"Erro ao iniciar aplicação: {e}")
         sys.exit(1)
 
 # Após os imports, modifique as configurações de segurança
@@ -1404,7 +1281,7 @@ def load_keys():
         env_secret = os.getenv("SECRET_KEY")
         env_encryption = os.getenv("ENCRYPTION_KEY")
         
-        if env_secret & env_encryption:
+        if env_secret and env_encryption:
             SECRET_KEY = env_secret.encode()
             ENCRYPTION_KEY = env_encryption.encode()
         else:

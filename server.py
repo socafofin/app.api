@@ -203,6 +203,7 @@ def validate_key():
         logging.error(f"Erro ao validar chave/usuário: {e}")
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
 
+# 1. Modifique a rota de login para corresponder ao client
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -210,13 +211,17 @@ def login():
     password = data.get('password')
     hwid = data.get('hwid')
 
-    logging.info(f"Tentativa de login - Username: {username}, HWID: {hwid}")
+    if not all([username, password, hwid]):
+        return jsonify({
+            "success": False,
+            "message": "Dados incompletos"
+        }), 400
 
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Primeiro, verifique se o usuário existe
+        # Verifica usuário
         cur.execute("""
             SELECT id, password, is_admin, hwid 
             FROM users 
@@ -226,7 +231,6 @@ def login():
         result = cur.fetchone()
         
         if not result:
-            logging.warning(f"Usuário não encontrado: {username}")
             return jsonify({
                 "success": False,
                 "message": "Usuário não encontrado"
@@ -234,15 +238,14 @@ def login():
 
         user_id, stored_password, is_admin, stored_hwid = result
 
-        # Verifique a senha
+        # Verifica senha
         if stored_password != password:
-            logging.warning(f"Senha incorreta para usuário: {username}")
             return jsonify({
                 "success": False,
                 "message": "Senha incorreta"
             }), 401
 
-        # Se o HWID ainda não foi registrado, atualize-o
+        # Verifica/atualiza HWID
         if not stored_hwid:
             cur.execute("""
                 UPDATE users 
@@ -250,15 +253,12 @@ def login():
                 WHERE id = %s
             """, (hwid, user_id))
             conn.commit()
-        # Se já existe um HWID, verifique se corresponde
         elif stored_hwid != hwid:
-            logging.warning(f"HWID não corresponde - Usuario: {username}, HWID Esperado: {stored_hwid}, HWID Recebido: {hwid}")
             return jsonify({
                 "success": False,
                 "message": "Dispositivo não autorizado"
             }), 401
 
-        logging.info(f"Login bem sucedido - Usuario: {username}, Admin: {is_admin}")
         return jsonify({
             "success": True,
             "isAdmin": is_admin,
@@ -269,7 +269,7 @@ def login():
         logging.error(f"Erro no login: {str(e)}")
         return jsonify({
             "success": False,
-            "message": f"Erro interno: {str(e)}"
+            "message": "Erro interno do servidor"
         }), 500
     finally:
         if cur:
