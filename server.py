@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 import psycopg2
@@ -13,7 +14,13 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
+CORS(app)
+
+# Configuração do PostgreSQL para Render
 DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 CHAVES_VALIDAS = []
 
 @app.before_request
@@ -141,4 +148,4 @@ def handle_exception(e):
     return jsonify({"success": False, "message": f"Erro interno do servidor: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)  # DESATIVE O DEBUG EM PRODUÇÃO!
+    app.run(host='0.0.0.0', port=5000)
