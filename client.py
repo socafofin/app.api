@@ -267,23 +267,23 @@ class MainWindow(QWidget):
 
     def fazer_login(self):
         try:
-            # Primeiro verifica a conexão
-            if not verificar_conexao():
-                self.mostrar_erro("Servidor indisponível")
-                return False
+            # Adiciona headers corretos
+            headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
 
-            # Tenta fazer login
             response = requests.post(
-                f"{API_URL}/login",
+                f"{API_URL}/api/v1/login",
                 json={
                     "username": self.usuario.text(),
                     "password": self.senha.text(),
                     "hwid": get_hwid()
                 },
-                timeout=TIMEOUT,
-                verify=True
+                headers=headers,  # Adiciona os headers
+                timeout=TIMEOUT
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
@@ -291,7 +291,7 @@ class MainWindow(QWidget):
                     self.mostrar_sucesso("Login realizado com sucesso!")
                     return True
             
-            self.mostrar_erro("Erro de autenticação")
+            self.mostrar_erro(f"Erro: {response.json().get('message', 'Erro desconhecido')}")
             return False
 
         except requests.exceptions.RequestException as e:
@@ -1289,4 +1289,4 @@ def load_keys():
             save_keys()
             
     except Exception as e:
-        logging.error(f"Erro ao carregar chaves: {e}") 
+        logging.error(f"Erro ao carregar chaves: {e}")

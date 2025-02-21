@@ -14,7 +14,13 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Configuração do PostgreSQL para Render
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -22,6 +28,10 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 CHAVES_VALIDAS = []
+
+API_PREFIX = '/api/v1'
+
+port = int(os.environ.get("PORT", 5000))
 
 @app.before_request
 def start_timer():
@@ -39,6 +49,15 @@ def log_request_info():
     logging.info(f"Cabeçalhos: {dict(request.headers)}")
     if request.get_json():
         logging.info(f"Dados JSON: {request.get_json()}")
+
+@app.before_request
+def verify_content_type():
+    if request.method == "POST":
+        if not request.is_json:
+            return jsonify({
+                "success": False,
+                "message": "Content-Type deve ser application/json"
+            }), 415
 
 @app.route('/ping', methods=['GET'])
 def ping():
@@ -102,7 +121,7 @@ def generate_keys():
         if conn:
             conn.close()
 
-@app.route('/register', methods=['POST'])
+@app.route(f'{API_PREFIX}/register', methods=['POST'])
 def register_user():
     data = request.get_json()
     key = data.get('key')
@@ -204,7 +223,7 @@ def validate_key():
         return jsonify({"success": False, "message": f"Erro ao validar chave/usuário: {e}"}), 500
 
 # 1. Modifique a rota de login para corresponder ao client
-@app.route('/login', methods=['POST'])
+@app.route(f'{API_PREFIX}/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data.get('username')
@@ -277,6 +296,45 @@ def login():
         if conn:
             conn.close()
 
+@app.route(f'{API_PREFIX}/health', methods=['GET'])
+def health_check():
+    try:
+        # Verifica conexão com banco
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute('SELECT 1')
+        conn.close()
+        
+        return jsonify({
+            "status": "healthy",
+            "database": "connected",
+            "message": "Servidor operacional",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "version": "1.0.0"
+        }), 200
+    except Exception as e:
+        logging.error(f"Erro no health check: {str(e)}")
+        return jsonify({
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }), 500
+
+@app.route('/')
+def index():
+    return jsonify({
+        "name": "MG Spoofer API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": [
+            "/health",
+            "/api/v1/login",
+            "/api/v1/register",
+            "/api/v1/validate_key"
+        ]
+    })
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     logging.error(f"Erro não tratado: {str(e)}", exc_info=True)
@@ -286,4 +344,9 @@ def handle_exception(e):
     return jsonify({"success": False, "message": f"Erro interno do servidor: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Modo de desenvolvimento
+    if os.environ.get('FLASK_ENV') == 'development':
+        app.run(host='0.0.0.0', port=port, debug=True)
+    else:
+        # Modo de produção
+        app.run(host='0.0.0.0', port=port)
