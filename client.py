@@ -94,9 +94,10 @@ def get_hwid():
 
 def verificar_conexao():
     try:
-        session.get(API_URL, timeout=5)
-        return True
-    except:
+        response = requests.get(API_URL, timeout=TIMEOUT, verify=True)
+        return response.status_code == 200
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Erro de conexão: {e}")
         return False
 
 DATABASE_URL = os.getenv('DATABASE_URL')  # Pega do ambiente do Render
@@ -266,32 +267,32 @@ class MainWindow(QWidget):
 
     def fazer_login(self):
         try:
-            username = self.usuario.text()
-            password = self.senha.text()
-            hwid = get_hwid()
+            # Primeiro verifica a conexão
+            if not verificar_conexao():
+                self.mostrar_erro("Servidor indisponível")
+                return False
 
+            # Tenta fazer login
             response = requests.post(
                 f"{API_URL}/login",
                 json={
-                    "username": username,
-                    "password": password,
-                    "hwid": hwid
+                    "username": self.usuario.text(),
+                    "password": self.senha.text(),
+                    "hwid": get_hwid()
                 },
-                timeout=TIMEOUT
+                timeout=TIMEOUT,
+                verify=True
             )
-
+            
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
                     self.is_admin = data.get("isAdmin", False)
                     self.mostrar_sucesso("Login realizado com sucesso!")
                     return True
-                else:
-                    self.mostrar_erro(data.get("message", "Erro ao fazer login"))
-                    return False
-            else:
-                self.mostrar_erro("Erro de conexão com o servidor")
-                return False
+            
+            self.mostrar_erro("Erro de autenticação")
+            return False
 
         except requests.exceptions.RequestException as e:
             self.mostrar_erro(f"Erro de conexão: {str(e)}")
@@ -1281,11 +1282,11 @@ def load_keys():
         env_secret = os.getenv("SECRET_KEY")
         env_encryption = os.getenv("ENCRYPTION_KEY")
         
-        if env_secret and env_encryption:
+        if env_secret environment and env_encryption:
             SECRET_KEY = env_secret.encode()
             ENCRYPTION_KEY = env_encryption.encode()
         else:
             save_keys()
             
     except Exception as e:
-        logging.error(f"Erro ao carregar chaves: {e}")
+        logging.error(f"Erro ao carregar chaves: {e}") 
