@@ -132,69 +132,79 @@ def generate_keys():
 
 @app.route('/register', methods=['POST'])
 def register_user():
-    data = request.get_json()
-    key = data.get('key')
-    hwid = data.get('hwid')
-    usuario = data.get('username')
-    password = data.get('password')
-
-    if not all([usuario, password, key, hwid]):
-        return jsonify({"success": False, "message": "Dados incompletos fornecidos."}), 400
-
     try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        key = data.get('key')
+        hwid = data.get('hwid')
+
+        if not all([username, password, key, hwid]):
+            return jsonify({
+                "success": False,
+                "message": "Dados incompletos"
+            }), 400
+
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        
-        # Verifica se a key existe e é válida
+
+        # Verifica se a key é válida e não usada
         cur.execute("""
-            SELECT id, expires_at, used 
+            SELECT id, expiration_date, is_used 
             FROM keys 
-            WHERE key = %s
+            WHERE key_value = %s
         """, (key,))
         
-        key_info = cur.fetchone()
+        result = cur.fetchone()
+        
+        if not result:
+            return jsonify({
+                "success": False,
+                "message": "Key inválida"
+            }), 400
 
-        if not key_info:
-            return jsonify({"success": False, "message": "Key de ativação inválida."}), 401
+        key_id, expiration_date, is_used = result
 
-        key_id, expires_at, used = key_info
+        if is_used:
+            return jsonify({
+                "success": False,
+                "message": "Key já utilizada"
+            }), 400
 
-        if used:
-            return jsonify({"success": False, "message": "Key já utilizada."}), 401
+        if datetime.datetime.now() > expiration_date:
+            return jsonify({
+                "success": False,
+                "message": "Key expirada"
+            }), 400
 
-        if expires_at < datetime.datetime.now():
-            return jsonify({"success": False, "message": "Key expirada."}), 401
-
-        # Registra o usuário
+        # Insere o novo usuário
         cur.execute("""
-            INSERT INTO users (username, password, hwid, created_at) 
-            VALUES (%s, %s, %s, %s)
-        """, (usuario, password, hwid, datetime.datetime.now()))
+            INSERT INTO users (username, password, hwid)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (username, password, hwid))
+        
+        user_id = cur.fetchone()[0]
 
         # Marca a key como usada
         cur.execute("""
             UPDATE keys 
-            SET used = TRUE, used_by = %s 
+            SET is_used = TRUE, user_id = %s
             WHERE id = %s
-        """, (usuario, key_id))
-
-        conn.commit()
+        """, (user_id, key_id))
         
+        conn.commit()
+
         return jsonify({
-            "success": True, 
-            "message": "Usuário registrado com sucesso!"
+            "success": True,
+            "message": "Usuário registrado com sucesso"
         }), 201
 
-    except psycopg2.IntegrityError:
-        return jsonify({
-            "success": False,
-            "message": "Usuário já existe."
-        }), 400
     except Exception as e:
-        logging.error(f"Erro ao registrar usuário: {e}")
+        logging.error(f"Erro ao registrar usuário: {str(e)}")
         return jsonify({
             "success": False,
-            "message": f"Erro ao registrar usuário: {str(e)}"
+            "message": "Erro interno do servidor"
         }), 500
     finally:
         if cur:

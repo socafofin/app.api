@@ -32,8 +32,8 @@ logging.basicConfig(
     ]
 )
 # Configurações da API
-API_URL = os.getenv('API_URL', "https://mgs-qpbo.onrender.com")  # Configurável via .env
-
+API_URL = "https://mgs-qpbo.onrender.com"  # Para desenvolvimento local
+# API_URL = "https://mgs-qpbo.onrender.com"  # Para produção
 TIMEOUT = 10  # Reduzido para 10 segundos
 # Adicione constantes no início do arquivo
 ADMIN_CREDENTIALS = {"adm1": "adm1"}
@@ -132,7 +132,7 @@ class MainWindow(QWidget):
         main_layout = QVBoxLayout()
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
-
+    
         # Navbar
         navbar = QFrame()
         navbar.setStyleSheet('''
@@ -145,14 +145,14 @@ class MainWindow(QWidget):
         navbar_layout.setContentsMargins(10, 5, 10, 5)
         # Adicione um stretch no início para centralizar
         navbar_layout.addStretch(1)
-
+    
         # Campos de login na navbar
         self.usuario = QLineEdit()
         self.usuario.setPlaceholderText('Usuário')
         self.senha = QLineEdit()
         self.senha.setPlaceholderText('Senha')
         self.senha.setEchoMode(QLineEdit.Password)
-
+    
         # Botões na navbar
         self.btn_login = QPushButton('LOGIN')
         self.btn_registrar = QPushButton('REGISTRAR')
@@ -205,7 +205,7 @@ class MainWindow(QWidget):
         navbar_layout.addStretch(1)
         navbar.setLayout(navbar_layout)
         main_layout.addWidget(navbar)
-
+    
         # Stack Widget para conteúdo
         self.stack = QStackedWidget()
         
@@ -241,7 +241,7 @@ class MainWindow(QWidget):
         welcome_layout.addWidget(self.login_text)
         welcome_layout.addWidget(self.spoofer_text)
         self.welcome_page.setLayout(welcome_layout)
-
+    
         # Página do Spoofer
         self.spoofer_page = QWidget()
         navbar_layout = QHBoxLayout()
@@ -259,83 +259,39 @@ class MainWindow(QWidget):
         self.anim.setLoopCount(-1)
         self.anim.valueChanged.connect(self.update_border)
         self.anim.start()
-
+    
         # Conexões
         self.btn_login.clicked.connect(self.fazer_login)
         self.btn_registrar.clicked.connect(self.registrar)
         self.usuario.returnPressed.connect(self.fazer_login)
         self.senha.returnPressed.connect(self.fazer_login)
 
-def fazer_login(self):
-    # Mostrar indicador de carregamento
-    self.mostrar_carregamento()
+    def fazer_login(self):
+        try:
+            response = requests.post(
+                f"{API_URL}/login",
+                json={
+                    "username": self.usuario.text(),
+                    "password": self.senha.text(),
+                    "hwid": get_hwid()
+                },
+                headers={'Content-Type': 'application/json'},
+                timeout=TIMEOUT
+            )
     
-    try:
-        # Verifica campos obrigatórios
-        if not self.usuario.text() or not self.senha.text():
-            self.mostrar_erro("Por favor, preencha todos os campos.")
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    self.is_admin = data.get("isAdmin", False)
+                    self.mostrar_sucesso("Login realizado com sucesso!")
+                    return True
+            
+            self.mostrar_erro(f"Erro: {response.json().get('message', 'Erro desconhecido')}")
             return False
-
-        # Verifica conexão com a API antes de tentar login
-        if not verificar_conexao():
-            self.mostrar_erro("Não foi possível conectar ao servidor. Verifique sua conexão com a internet.")
+    
+        except requests.exceptions.RequestException as e:
+            self.mostrar_erro(f"Erro de conexão: {str(e)}")
             return False
-
-        response = requests.post(
-            f"{API_URL}/login",
-            json={
-                "username": self.usuario.text(),
-                "password": self.senha.text(),
-                "hwid": get_hwid()
-            },
-            headers={'Content-Type': 'application/json'},
-            timeout=TIMEOUT
-        )
-
-        # Tratamento detalhado de erros
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("success"):
-                self.is_admin = data.get("isAdmin", False)
-                self.mostrar_sucesso("Login realizado com sucesso!")
-                self.login_sucesso()
-                return True
-            else:
-                error_msg = data.get('message', 'Erro desconhecido')
-                if "dispositivo não autorizado" in error_msg.lower():
-                    self.mostrar_erro("Dispositivo não autorizado. Entre em contato com o suporte.")
-                else:
-                    self.mostrar_erro(f"Erro: {error_msg}")
-                return False
-
-        elif response.status_code == 401:
-            self.mostrar_erro("Credenciais inválidas. Verifique seu usuário e senha.")
-            return False
-        elif response.status_code == 403:
-            self.mostrar_erro("Acesso negado. Verifique suas permissões.")
-            return False
-        elif response.status_code == 500:
-            self.mostrar_erro("Erro interno do servidor. Tente novamente mais tarde.")
-            return False
-        else:
-            self.mostrar_erro(f"Erro inesperado: {response.status_code}")
-            return False
-
-    except requests.exceptions.Timeout:
-        self.mostrar_erro("Tempo de conexão esgotado. Verifique sua internet.")
-        return False
-    except requests.exceptions.ConnectionError:
-        self.mostrar_erro("Não foi possível conectar ao servidor. Verifique sua conexão com a internet.")
-        return False
-    except requests.exceptions.RequestException as e:
-        self.mostrar_erro(f"Erro de conexão: {str(e)}")
-        return False
-    finally:
-        # Esconder indicador de carregamento
-        if hasattr(self, 'loading'):
-            self.loading.hide()
-
-
 
     def login_sucesso(self):
         # Oculta os textos iniciais
@@ -492,6 +448,7 @@ def fazer_login(self):
     def iniciar_spoof(self):
         try:
             # Cria o container de feedback se não existir
+            
             if not hasattr(self, 'feedback_container'):
                 self.feedback_container = QFrame()
                 self.feedback_container.setStyleSheet('''
@@ -502,11 +459,11 @@ def fazer_login(self):
                         padding: 10px;
                     }
                 ''')
-                
+            
             self.stack.setCurrentWidget(self.spoofer_page)
             self.feedback_container.show()
             self.iniciar_processo_spoof()
-            
+        
         except Exception as e:
             self.mostrar_erro(f"Erro ao iniciar spoof: {str(e)}")
 
@@ -613,41 +570,25 @@ def fazer_login(self):
 
         return True
 
-def mostrar_erro(self, mensagem):
-    """Exibe uma mensagem de erro formatada"""
-    msg = QMessageBox()
-    msg.setIcon(QMessageBox.Warning)
-    msg.setWindowTitle('Erro')
-    
-    # Adiciona ícone e formatação melhorada
-    msg.setText(f"⚠️ {mensagem}")
-    msg.setInformativeText("Por favor, tente novamente ou entre em contato com o suporte.")
-    
-    msg.setStyleSheet('''
-        QMessageBox {
-            background-color: #1a0058;
-            color: #ff00ff;
-            font-size: 14px;
-        }
-        QPushButton {
-            background: #ff00ff;
-            color: black;
-            border: none;
-            padding: 8px 24px;
-            border-radius: 8px;
-            min-width: 100px;
-        }
-        QPushButton:hover {
-            background: #ff66ff;
-        }
-    ''')
-    
-    # Adiciona botão de detalhes para erros técnicos
-    if "erro técnico" in mensagem.lower():
-        msg.setDetailedText("Detalhes técnicos do erro:\nCódigo: 500\nTipo: Erro de servidor")
-    
-    msg.exec_()
-
+    def mostrar_erro(self, mensagem):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle('Erro')
+        msg.setText(mensagem)
+        msg.setStyleSheet('''
+            QMessageBox {
+                background-color: #1a0058;
+                color: #ff00ff;
+            }
+            QPushButton {
+                background: #ff00ff;
+                color: black;
+                border: none;
+                padding: 6px 20px;
+                border-radius: 8px;
+            }
+        ''')
+        msg.exec_()
 
     def gerar_key(self):
         try:
@@ -660,7 +601,7 @@ def mostrar_erro(self, mensagem):
             
             if not ok:
                 return
-
+    
             response = requests.post(
                 f"{API_URL}/generate_keys",
                 json={
@@ -671,7 +612,7 @@ def mostrar_erro(self, mensagem):
                 headers={'Content-Type': 'application/json'},
                 timeout=TIMEOUT
             )
-
+    
             if response.status_code == 201:
                 data = response.json()
                 self.mostrar_sucesso(
@@ -680,7 +621,7 @@ def mostrar_erro(self, mensagem):
                 )
             else:
                 self.mostrar_erro("Erro ao gerar key")
-
+    
         except Exception as e:
             self.mostrar_erro(f'Erro ao conectar com o servidor: {str(e)}')
 
@@ -705,41 +646,27 @@ def mostrar_erro(self, mensagem):
         except:
             return True
 
-def mostrar_sucesso(self, mensagem):
-    """Exibe uma mensagem de sucesso formatada"""
-    msg = QMessageBox()
-    msg.setIcon(QMessageBox.Information)
-    msg.setWindowTitle('Sucesso')
-    
-    # Adiciona ícone e formatação melhorada
-    msg.setText(f"✅ {mensagem}")
-    
-    msg.setStyleSheet('''
-        QMessageBox {
-            background-color: #1a0058;
-            color: #00ff99;
-            font-size: 14px;
-        }
-        QPushButton {
-            background: #00ffff;
-            color: black;
-            border: none;
-            padding: 8px 24px;
-            border-radius: 8px;
-            min-width: 100px;
-        }
-        QPushButton:hover {
-            background: #66ffff;
-        }
-    ''')
-    
-    # Adiciona timer para fechar automaticamente após 3 segundos
-    timer = QTimer()
-    timer.singleShot(3000, msg.accept)
-    
-    msg.exec_()
-    self.login_sucesso()
-
+    def mostrar_sucesso(self, mensagem):
+        """Mostra mensagem de sucesso"""
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle('Sucesso')
+        msg.setText(mensagem)
+        msg.setStyleSheet('''
+            QMessageBox {
+                background-color: #1a0058;
+                color: #00ff99;  /* Verde água */
+            }
+            QPushButton {
+                background: #00ffff;
+                color: black;
+                border: none;
+                padding: 6px 20px;
+                border-radius: 8px;
+            }
+        ''')
+        msg.exec_()
+        self.login_sucesso()  # Chama função após login bem sucedido
 
 class TelaInicial(QWidget):
     def __init__(self, is_admin=False):
@@ -1300,7 +1227,7 @@ class TelaRegistro(QWidget):
         senha = self.senha.text()
         key = self.key.text()
         hwid = get_hwid()  # Adiciona HWID
-
+    
         try:
             response = requests.post(f"{API_URL}/register", json={
                 "username": usuario,
@@ -1308,7 +1235,7 @@ class TelaRegistro(QWidget):
                 "key": key,
                 "hwid": hwid  # Inclui HWID no registro
             }, verify=True, timeout=5)
-
+    
             if response.status_code == 201:
                 QMessageBox.information(self, 'Sucesso', 'Registro realizado com sucesso!')
                 self.close()
@@ -1320,7 +1247,6 @@ class TelaRegistro(QWidget):
 
 if __name__ == '__main__':
     try:
-        # Inicializa logging primeiro
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -1330,17 +1256,12 @@ if __name__ == '__main__':
             ]
         )
 
-        # Carrega variáveis de ambiente
         load_dotenv()
-        
-        # Verifica segurança
         check_security()
         
-        # Inicializa a aplicação
         app = QApplication(sys.argv)
         app.setStyle('Fusion')
         
-        # Inicia interface
         window = MainWindow()
         window.setWindowIcon(QIcon(ICON_PATH))
         window.show()
@@ -1369,7 +1290,6 @@ def encrypt_data(data):
         logging.error(f"Erro na criptografia: {e}")
         return None
 
-# Função para descriptografar usando ENCRYPTION_KEY
 def decrypt_data(encrypted_data):
     try:
         # Usa ENCRYPTION_KEY para descriptografia
@@ -1390,19 +1310,19 @@ def save_keys():
         logging.error(f"Erro ao salvar chaves: {e}")
 
 # Função para carregar as chaves
-def load_keys():
-    try:
-        load_dotenv()
-        global SECRET_KEY, ENCRYPTION_KEY
-        
-        env_secret = os.getenv("SECRET_KEY")
-        env_encryption = os.getenv("ENCRYPTION_KEY")
-        
-        if env_secret & env_encryption:
-            SECRET_KEY = env_secret.encode()
-            ENCRYPTION_KEY = env_encryption.encode()
-        else:
-            save_keys()
+    def load_keys():
+        try:
+            load_dotenv()
+            global SECRET_KEY, ENCRYPTION_KEY
             
-    except Exception as e:
-        logging.error(f"Erro ao carregar chaves: {e}")
+            env_secret = os.getenv("SECRET_KEY")
+            env_encryption = os.getenv("ENCRYPTION_KEY")
+            
+            if env_secret and env_encryption:  # Corrigido operador lógico
+                SECRET_KEY = env_secret.encode()
+                ENCRYPTION_KEY = env_encryption.encode()
+            else:
+                save_keys()
+                
+        except Exception as e:
+            logging.error(f"Erro ao carregar chaves: {e}")
