@@ -199,6 +199,7 @@ class MainWindow(QWidget):
 
     def fazer_login(self):
         try:
+            logging.info(f"Tentando login com usuário: {self.usuario.text()}, HWID: {get_hwid()}")
             response = requests.post(
                 f"{API_URL}/login",
                 json={
@@ -209,17 +210,19 @@ class MainWindow(QWidget):
                 headers={'Content-Type': 'application/json'},
                 timeout=TIMEOUT
             )
-    
+
+            logging.info(f"Resposta do servidor: {response.status_code} - {response.text}")
+
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
                     self.is_admin = data.get("isAdmin", False)
                     self.mostrar_sucesso("Login realizado com sucesso!")
                     return True
-            
+        
             self.mostrar_erro(f"Erro: {response.json().get('message', 'Erro desconhecido')}")
             return False
-    
+
         except requests.exceptions.RequestException as e:
             self.mostrar_erro(f"Erro de conexão: {str(e)}")
             return False
@@ -431,6 +434,13 @@ class MainWindow(QWidget):
         msg.setCheckBox(checkbox)
         checkbox.stateChanged.connect(lambda state: self.btn_spoof.setEnabled(state == Qt.Checked))
         msg.exec_()
+
+    def iniciar_spoof(self):
+        try:
+            # Aqui você pode adicionar a lógica para iniciar o processo de spoofing
+            self.mostrar_sucesso("Spoofing iniciado com sucesso!")
+        except Exception as e:
+            self.mostrar_erro(f"Erro ao iniciar spoof: {str(e)}")
 
     def update_border(self, value):
         if hasattr(self, 'spoofer_text') and self.spoofer_text:

@@ -251,11 +251,13 @@ def validate_key():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
+    logging.info(f"Requisição de login recebida: {data}")
     username = data.get('username')
     password = data.get('password')
     hwid = data.get('hwid')
 
     if not all([username, password, hwid]):
+        logging.error("Dados incompletos")
         return jsonify({"success": False, "message": "Dados incompletos"}), 400
 
     conn = get_db_connection()
@@ -266,8 +268,10 @@ def login():
     conn.close()
 
     if user and user[0] == password:
+        logging.info(f"Login bem-sucedido para usuário: {username}")
         return jsonify({"success": True, "isAdmin": user[1]})
     else:
+        logging.error(f"Falha no login para usuário: {username}")
         return jsonify({"success": False, "message": "Usuário ou senha incorretos"}), 401
 
 @app.route('/health', methods=['GET'])
