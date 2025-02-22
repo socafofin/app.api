@@ -4,6 +4,7 @@ import base64
 import hashlib
 import logging
 import random
+import string
 import shutil
 import socket
 import subprocess
@@ -17,7 +18,7 @@ from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 from PyQt5.QtWidgets import (QApplication, QWidget, QLineEdit, QPushButton, 
                            QVBoxLayout, QLabel, QMessageBox, QFrame, 
-                           QProgressBar, QCheckBox, QStackedWidget, QHBoxLayout)
+                           QProgressBar, QCheckBox, QStackedWidget, QHBoxLayout, QInputDialog)
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QPoint, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QFont, QIcon, QMovie, QFontDatabase, QPixmap
 
@@ -31,8 +32,8 @@ logging.basicConfig(
     ]
 )
 # Configurações da API
-API_URL = "https://mgs-qpbo.onrender.com"  # Para desenvolvimento local
-# API_URL = "https://mgs-qpbo.onrender.com"  # Para produção
+API_URL = os.getenv('API_URL', "https://mgs-qpbo.onrender.com")  # Configurável via .env
+
 TIMEOUT = 10  # Reduzido para 10 segundos
 # Adicione constantes no início do arquivo
 ADMIN_CREDENTIALS = {"adm1": "adm1"}
@@ -265,32 +266,76 @@ class MainWindow(QWidget):
         self.usuario.returnPressed.connect(self.fazer_login)
         self.senha.returnPressed.connect(self.fazer_login)
 
-    def fazer_login(self):
-        try:
-            response = requests.post(
-                f"{API_URL}/login",
-                json={
-                    "username": self.usuario.text(),
-                    "password": self.senha.text(),
-                    "hwid": get_hwid()
-                },
-                headers={'Content-Type': 'application/json'},
-                timeout=TIMEOUT
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success"):
-                    self.is_admin = data.get("isAdmin", False)
-                    self.mostrar_sucesso("Login realizado com sucesso!")  # Usa a nova função
-                    return True
-        
-            self.mostrar_erro(f"Erro: {response.json().get('message', 'Erro desconhecido')}")
+def fazer_login(self):
+    # Mostrar indicador de carregamento
+    self.mostrar_carregamento()
+    
+    try:
+        # Verifica campos obrigatórios
+        if not self.usuario.text() or not self.senha.text():
+            self.mostrar_erro("Por favor, preencha todos os campos.")
             return False
 
-        except requests.exceptions.RequestException as e:
-            self.mostrar_erro(f"Erro de conexão: {str(e)}")
+        # Verifica conexão com a API antes de tentar login
+        if not verificar_conexao():
+            self.mostrar_erro("Não foi possível conectar ao servidor. Verifique sua conexão com a internet.")
             return False
+
+        response = requests.post(
+            f"{API_URL}/login",
+            json={
+                "username": self.usuario.text(),
+                "password": self.senha.text(),
+                "hwid": get_hwid()
+            },
+            headers={'Content-Type': 'application/json'},
+            timeout=TIMEOUT
+        )
+
+        # Tratamento detalhado de erros
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("success"):
+                self.is_admin = data.get("isAdmin", False)
+                self.mostrar_sucesso("Login realizado com sucesso!")
+                self.login_sucesso()
+                return True
+            else:
+                error_msg = data.get('message', 'Erro desconhecido')
+                if "dispositivo não autorizado" in error_msg.lower():
+                    self.mostrar_erro("Dispositivo não autorizado. Entre em contato com o suporte.")
+                else:
+                    self.mostrar_erro(f"Erro: {error_msg}")
+                return False
+
+        elif response.status_code == 401:
+            self.mostrar_erro("Credenciais inválidas. Verifique seu usuário e senha.")
+            return False
+        elif response.status_code == 403:
+            self.mostrar_erro("Acesso negado. Verifique suas permissões.")
+            return False
+        elif response.status_code == 500:
+            self.mostrar_erro("Erro interno do servidor. Tente novamente mais tarde.")
+            return False
+        else:
+            self.mostrar_erro(f"Erro inesperado: {response.status_code}")
+            return False
+
+    except requests.exceptions.Timeout:
+        self.mostrar_erro("Tempo de conexão esgotado. Verifique sua internet.")
+        return False
+    except requests.exceptions.ConnectionError:
+        self.mostrar_erro("Não foi possível conectar ao servidor. Verifique sua conexão com a internet.")
+        return False
+    except requests.exceptions.RequestException as e:
+        self.mostrar_erro(f"Erro de conexão: {str(e)}")
+        return False
+    finally:
+        # Esconder indicador de carregamento
+        if hasattr(self, 'loading'):
+            self.loading.hide()
+
+
 
     def login_sucesso(self):
         # Oculta os textos iniciais
@@ -445,9 +490,25 @@ class MainWindow(QWidget):
         self.btn_spoof.setEnabled(state == Qt.Checked)
 
     def iniciar_spoof(self):
-        # Ao invés de criar nova janela, atualiza a atual
-        self.stack.setCurrentWidget(self.spoofer_page)
-        self.iniciar_processo_spoof()
+        try:
+            # Cria o container de feedback se não existir
+            if not hasattr(self, 'feedback_container'):
+                self.feedback_container = QFrame()
+                self.feedback_container.setStyleSheet('''
+                    QFrame {
+                        background: rgba(10, 10, 20, 180);
+                        border: 2px solid #00ffff;
+                        border-radius: 15px;
+                        padding: 10px;
+                    }
+                ''')
+                
+            self.stack.setCurrentWidget(self.spoofer_page)
+            self.feedback_container.show()
+            self.iniciar_processo_spoof()
+            
+        except Exception as e:
+            self.mostrar_erro(f"Erro ao iniciar spoof: {str(e)}")
 
     def iniciar_processo_spoof(self):
         # Move a lógica do processo para aqui
@@ -552,49 +613,74 @@ class MainWindow(QWidget):
 
         return True
 
-    def mostrar_erro(self, mensagem):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle('Erro')
-        msg.setText(mensagem)
-        msg.setStyleSheet('''
-            QMessageBox {
-                background-color: #1a0058;
-                color: #ff00ff;
-            }
-            QPushButton {
-                background: #ff00ff;
-                color: black;
-                border: none;
-                padding: 6px 20px;
-                border-radius: 8px;
-            }
-        ''')
-        msg.exec_()
+def mostrar_erro(self, mensagem):
+    """Exibe uma mensagem de erro formatada"""
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Warning)
+    msg.setWindowTitle('Erro')
+    
+    # Adiciona ícone e formatação melhorada
+    msg.setText(f"⚠️ {mensagem}")
+    msg.setInformativeText("Por favor, tente novamente ou entre em contato com o suporte.")
+    
+    msg.setStyleSheet('''
+        QMessageBox {
+            background-color: #1a0058;
+            color: #ff00ff;
+            font-size: 14px;
+        }
+        QPushButton {
+            background: #ff00ff;
+            color: black;
+            border: none;
+            padding: 8px 24px;
+            border-radius: 8px;
+            min-width: 100px;
+        }
+        QPushButton:hover {
+            background: #ff66ff;
+        }
+    ''')
+    
+    # Adiciona botão de detalhes para erros técnicos
+    if "erro técnico" in mensagem.lower():
+        msg.setDetailedText("Detalhes técnicos do erro:\nCódigo: 500\nTipo: Erro de servidor")
+    
+    msg.exec_()
+
 
     def gerar_key(self):
         try:
-            response = requests.post(f"{API_URL}/generate_keys", json={
-                "quantidade": 1,
-                "duracao_dias": 30,
-                "generatedBy": self.usuario.text()
-            }, verify=True, timeout=5)
+            # Adiciona dialog para escolher duração
+            duracao, ok = QInputDialog.getInt(
+                self, 'Duração da Key',
+                'Digite a quantidade de dias de validade:',
+                30, 1, 365, 1
+            )
+            
+            if not ok:
+                return
+
+            response = requests.post(
+                f"{API_URL}/generate_keys",
+                json={
+                    "quantidade": 1,
+                    "duracao_dias": duracao,
+                    "generatedBy": self.usuario.text()
+                },
+                headers={'Content-Type': 'application/json'},
+                timeout=TIMEOUT
+            )
 
             if response.status_code == 201:
                 data = response.json()
-                key = data.get('key')
-                msg = QMessageBox()
-                msg.setWindowTitle('Key Gerada')
-                msg.setText(f'Nova key gerada:\n{key}')
-                msg.setStyleSheet('''
-                    QMessageBox {
-                        background-color: #1a0058;
-                        color: #00ff99;
-                    }
-                ''')
-                msg.exec_()
+                self.mostrar_sucesso(
+                    f'Nova key gerada:\nKey: {data["key"]}\n'
+                    f'Validade: {duracao} dias'
+                )
             else:
-                self.mostrar_erro('Erro ao gerar key')
+                self.mostrar_erro("Erro ao gerar key")
+
         except Exception as e:
             self.mostrar_erro(f'Erro ao conectar com o servidor: {str(e)}')
 
@@ -619,27 +705,41 @@ class MainWindow(QWidget):
         except:
             return True
 
-    def mostrar_sucesso(self, mensagem):
-        """Mostra mensagem de sucesso"""
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setWindowTitle('Sucesso')
-        msg.setText(mensagem)
-        msg.setStyleSheet('''
-            QMessageBox {
-                background-color: #1a0058;
-                color: #00ff99;  /* Verde água */
-            }
-            QPushButton {
-                background: #00ffff;
-                color: black;
-                border: none;
-                padding: 6px 20px;
-                border-radius: 8px;
-            }
-        ''')
-        msg.exec_()
-        self.login_sucesso()  # Chama função após login bem sucedido
+def mostrar_sucesso(self, mensagem):
+    """Exibe uma mensagem de sucesso formatada"""
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Information)
+    msg.setWindowTitle('Sucesso')
+    
+    # Adiciona ícone e formatação melhorada
+    msg.setText(f"✅ {mensagem}")
+    
+    msg.setStyleSheet('''
+        QMessageBox {
+            background-color: #1a0058;
+            color: #00ff99;
+            font-size: 14px;
+        }
+        QPushButton {
+            background: #00ffff;
+            color: black;
+            border: none;
+            padding: 8px 24px;
+            border-radius: 8px;
+            min-width: 100px;
+        }
+        QPushButton:hover {
+            background: #66ffff;
+        }
+    ''')
+    
+    # Adiciona timer para fechar automaticamente após 3 segundos
+    timer = QTimer()
+    timer.singleShot(3000, msg.accept)
+    
+    msg.exec_()
+    self.login_sucesso()
+
 
 class TelaInicial(QWidget):
     def __init__(self, is_admin=False):

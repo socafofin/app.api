@@ -7,6 +7,8 @@ import secrets
 import datetime
 import logging
 import time
+import random
+import string
 
 load_dotenv()
 
@@ -63,6 +65,7 @@ def ping():
 
 @app.route('/generate_keys', methods=['POST'])
 def generate_keys():
+    logging.debug(f"Iniciando geração de key por: {request.json.get('generatedBy')}")
     try:
         data = request.get_json()
         generated_by = data.get('generatedBy')
@@ -210,8 +213,10 @@ def validate_key():
 
     try:
         conn = psycopg2.connect(DATABASE_URL)
+        logging.debug("Conexão com banco de dados estabelecida")
         cur = conn.cursor()
-        cur.execute("SELECT data_expiracao FROM users WHERE access_key = %s AND hwid = %s", (key, hwid))
+        cur.execute("SELECT data_expiracao FROM users WHERE key_value = %s AND hwid = %s", (key, hwid))
+
         result = cur.fetchone()
         cur.close()
         conn.close()
