@@ -154,7 +154,7 @@ def register_user():
 
         # Verifica se a key é válida e não usada
         cur.execute("""
-            SELECT id, expiration_date, is_used 
+            SELECT id, expiration_date, is_used, duration_days 
             FROM keys 
             WHERE key_value = %s
         """, (key,))
@@ -167,7 +167,7 @@ def register_user():
                 "message": "Key inválida"
             }), 400
 
-        key_id, expiration_date, is_used = result
+        key_id, key_expiration, is_used, duration_days = result
 
         if is_used:
             return jsonify({
@@ -175,18 +175,15 @@ def register_user():
                 "message": "Key já utilizada"
             }), 400
 
-        if datetime.datetime.now() > expiration_date:
-            return jsonify({
-                "success": False,
-                "message": "Key expirada"
-            }), 400
+        # Calcula a data de expiração do usuário
+        user_expiration = datetime.datetime.now() + datetime.timedelta(days=duration_days)
 
-        # Insere o novo usuário
+        # Insere o novo usuário com data de expiração
         cur.execute("""
-            INSERT INTO users (username, password, hwid)
-            VALUES (%s, %s, %s)
+            INSERT INTO users (username, password, hwid, expiration_date, key_id)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id
-        """, (username, password, hwid))
+        """, (username, password, hwid, user_expiration, key_id))
         
         user_id = cur.fetchone()[0]
 
@@ -201,11 +198,14 @@ def register_user():
 
         return jsonify({
             "success": True,
-            "message": "Usuário registrado com sucesso"
+            "message": "Usuário registrado com sucesso",
+            "expiration_date": user_expiration.strftime("%d/%m/%Y")
         }), 201
 
     except Exception as e:
         logging.error(f"Erro ao registrar usuário: {str(e)}")
+        if conn:
+            conn.rollback()
         return jsonify({
             "success": False,
             "message": "Erro interno do servidor"
@@ -273,6 +273,36 @@ def login():
     else:
         logging.error(f"Falha no login para usuário: {username}")
         return jsonify({"success": False, "message": "Usuário ou senha incorretos"}), 401
+
+@app.route('/check_expiration', methods=['POST'])
+def check_expiration():
+    try:
+        data = request.get_json()
+        user = db.users.find_one({"username": data["username"]})
+        
+        if not user:
+            return jsonify({"valid": False, "message": "Usuário não encontrado"}), 404
+
+        # Verifica se é admin
+        if user.get("is_admin", False):
+            return jsonify({"valid": True, "isAdmin": True}), 200
+
+        # Verifica a expiração
+        expiration_date = user.get("expiration_date")
+        if not expiration_date:
+            return jsonify({"valid": False, "message": "Data de expiração não encontrada"}), 400
+
+        is_valid = datetime.now() < expiration_date
+        
+        return jsonify({
+            "valid": is_valid,
+            "expirationDate": expiration_date.strftime("%d/%m/%Y"),
+            "remainingDays": (expiration_date - datetime.now()).days if is_valid else 0
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Erro ao verificar expiração: {str(e)}")
+        return jsonify({"valid": False, "message": "Erro interno"}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
