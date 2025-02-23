@@ -278,31 +278,69 @@ def login():
 def check_expiration():
     try:
         data = request.get_json()
-        user = db.users.find_one({"username": data["username"]})
+        username = data.get('username')
+        password = data.get('password')
+        hwid = data.get('hwid')
+
+        if not all([username, password, hwid]):
+            return jsonify({"valid": False, "message": "Dados incompletos"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Verifica usuário e admin status
+        cur.execute("""
+            SELECT is_admin, expiration_date 
+            FROM users 
+            WHERE username = %s AND password = %s AND hwid = %s
+        """, (username, password, hwid))
+        
+        user = cur.fetchone()
         
         if not user:
             return jsonify({"valid": False, "message": "Usuário não encontrado"}), 404
 
-        # Verifica se é admin
-        if user.get("is_admin", False):
-            return jsonify({"valid": True, "isAdmin": True}), 200
+        is_admin, expiration_date = user
 
-        # Verifica a expiração
-        expiration_date = user.get("expiration_date")
+        # Se for admin, retorna válido
+        if is_admin:
+            return jsonify({
+                "valid": True,
+                "isAdmin": True,
+                "message": "Conta administrativa"
+            }), 200
+
+        # Se não tiver data de expiração
         if not expiration_date:
-            return jsonify({"valid": False, "message": "Data de expiração não encontrada"}), 400
+            return jsonify({
+                "valid": False,
+                "message": "Data de expiração não encontrada"
+            }), 400
 
-        is_valid = datetime.now() < expiration_date
-        
+        # Calcula dias restantes
+        now = datetime.datetime.now()
+        remaining = expiration_date - now
+        is_valid = expiration_date > now
+
         return jsonify({
             "valid": is_valid,
             "expirationDate": expiration_date.strftime("%d/%m/%Y"),
-            "remainingDays": (expiration_date - datetime.now()).days if is_valid else 0
+            "remainingDays": remaining.days if is_valid else 0,
+            "message": "Licença válida" if is_valid else "Licença expirada"
         }), 200
 
     except Exception as e:
         logging.error(f"Erro ao verificar expiração: {str(e)}")
-        return jsonify({"valid": False, "message": "Erro interno"}), 500
+        return jsonify({
+            "valid": False,
+            "message": f"Erro interno: {str(e)}"
+        }), 500
+
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/health', methods=['GET'])
 def health_check():
