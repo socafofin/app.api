@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
@@ -9,6 +9,7 @@ import logging
 import time
 import random
 import string
+import json
 
 load_dotenv()
 
@@ -19,8 +20,10 @@ app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
         "origins": "*",
-        "methods": ["GET", "POST"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "methods": ["GET", "POST", "OPTIONS"],  # Adicionado OPTIONS
+        "allow_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
     }
 })
 
@@ -50,9 +53,8 @@ def log_response_time(response):
 @app.before_request
 def log_request_info():
     logging.info(f"Requisição recebida: {request.method} {request.url}")
-    logging.info(f"Cabeçalhos: {dict(request.headers)}")
-    if request.get_json():
-        logging.info(f"Dados JSON: {request.get_json()}")
+    logging.info(f"Headers: {dict(request.headers)}")
+    logging.info(f"Body: {request.get_data(as_text=True)}")
 
 @app.before_request
 def verify_content_type():
@@ -74,9 +76,9 @@ def generate_keys():
         data = request.get_json()
         generated_by = data.get('generatedBy')
         quantidade = data.get('quantidade', 1)
-        duracao_dias = data.get('duracao_dias', 30)
+        duracao_dias = data.get('duracao_dias', 30)  # Pegando a duração dos dias
 
-        logging.info(f"Tentativa de gerar key por: {generated_by}")
+        logging.info(f"Tentativa de gerar key por: {generated_by} com duração de {duracao_dias} dias")
 
         try:
             conn = psycopg2.connect(DATABASE_URL)
@@ -97,21 +99,27 @@ def generate_keys():
 
             # Gera nova key
             key = f"MGSP-{''.join(random.choices(string.ascii_uppercase + string.digits, k=16))}"
+            
+            # Calcula a data de expiração baseada na duração informada
             expiration_date = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
 
-            # Salva no banco (note o uso de key_value ao invés de key)
+            # Salva no banco incluindo a duração em dias
             cur.execute("""
-                INSERT INTO keys (key_value, expiration_date, generated_by)
-                VALUES (%s, %s, %s)
-                RETURNING key_value
-            """, (key, expiration_date, generated_by))
+                INSERT INTO keys (key_value, expiration_date, generated_by, duration_days)
+                VALUES (%s, %s, %s, %s)
+                RETURNING key_value, duration_days
+            """, (key, expiration_date, generated_by, duracao_dias))
             
+            key_data = cur.fetchone()
             conn.commit()
+
+            logging.info(f"Key gerada com sucesso: {key} - Duração: {duracao_dias} dias")
 
             return jsonify({
                 "success": True,
                 "key": key,
-                "expiration_date": expiration_date.isoformat()
+                "duration_days": duracao_dias,
+                "expiration_date": expiration_date.strftime("%d/%m/%Y")
             }), 201
 
         except Exception as e:
@@ -154,39 +162,29 @@ def register_user():
 
         # Verifica se a key é válida e não usada
         cur.execute("""
-            SELECT id, expiration_date, is_used 
+            SELECT id, duration_days, is_used 
             FROM keys 
             WHERE key_value = %s
         """, (key,))
         
-        result = cur.fetchone()
-        
-        if not result:
-            return jsonify({
-                "success": False,
-                "message": "Key inválida"
-            }), 400
+        key_data = cur.fetchone()
+        if not key_data:
+            return jsonify({"success": False, "message": "Key inválida"}), 400
 
-        key_id, expiration_date, is_used = result
+        key_id, duration_days, is_used = key_data
 
         if is_used:
-            return jsonify({
-                "success": False,
-                "message": "Key já utilizada"
-            }), 400
+            return jsonify({"success": False, "message": "Key já utilizada"}), 400
 
-        if datetime.datetime.now() > expiration_date:
-            return jsonify({
-                "success": False,
-                "message": "Key expirada"
-            }), 400
+        # Calcula a data de expiração usando a duração da key
+        expiration_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
 
-        # Insere o novo usuário
+        # Insere o usuário com a data de expiração correta
         cur.execute("""
-            INSERT INTO users (username, password, hwid)
-            VALUES (%s, %s, %s)
+            INSERT INTO users (username, password, hwid, expiration_date)
+            VALUES (%s, %s, %s, %s)
             RETURNING id
-        """, (username, password, hwid))
+        """, (username, password, hwid, expiration_date))
         
         user_id = cur.fetchone()[0]
 
@@ -201,11 +199,14 @@ def register_user():
 
         return jsonify({
             "success": True,
-            "message": "Usuário registrado com sucesso"
+            "message": "Usuário registrado com sucesso",
+            "expiration_date": expiration_date.strftime("%d/%m/%Y")
         }), 201
 
     except Exception as e:
         logging.error(f"Erro ao registrar usuário: {str(e)}")
+        if conn:
+            conn.rollback()
         return jsonify({
             "success": False,
             "message": "Erro interno do servidor"
@@ -274,6 +275,78 @@ def login():
         logging.error(f"Falha no login para usuário: {username}")
         return jsonify({"success": False, "message": "Usuário ou senha incorretos"}), 401
 
+@app.route('/check_expiration', methods=['POST'])
+def check_expiration():
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        hwid = data.get('hwid')
+
+        if not all([username, password, hwid]):
+            return jsonify({"valid": False, "message": "Dados incompletos"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Verifica usuário e admin status
+        cur.execute("""
+            SELECT is_admin, expiration_date 
+            FROM users 
+            WHERE username = %s AND password = %s AND hwid = %s
+        """, (username, password, hwid))
+        
+        user = cur.fetchone()
+        
+        if not user:
+            return jsonify({"valid": False, "message": "Usuário não encontrado"}), 404
+
+        is_admin, expiration_date = user
+
+        # Se for admin, retorna válido
+        if is_admin:
+            return jsonify({
+                "valid": True,
+                "isAdmin": True,
+                "message": "Conta administrativa"
+            }), 200
+
+        # Se não tiver data de expiração
+        if not expiration_date:
+            return jsonify({
+                "valid": False,
+                "message": "Data de expiração não encontrada"
+            }), 400
+
+        # Calcula dias restantes
+        now = datetime.datetime.now()
+        remaining = expiration_date - now
+        is_valid = expiration_date > now
+        # Calcula dias e horas restantes
+        remaining_days = remaining.days
+        remaining_hours = remaining.seconds // 3600  # Converte segundos para horas
+
+        return jsonify({
+            "valid": is_valid,
+            "expirationDate": expiration_date.strftime("%d/%m/%Y"),
+            "remainingDays": remaining_days,
+            "remainingHours": remaining_hours,
+            "message": "Licença válida" if is_valid else "Licença expirada"
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Erro ao verificar expiração: {str(e)}")
+        return jsonify({
+            "valid": False,
+            "message": f"Erro interno: {str(e)}"
+        }), 500
+
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
 @app.route('/health', methods=['GET'])
 def health_check():
     try:
@@ -297,6 +370,100 @@ def health_check():
             "database": "disconnected",
             "error": str(e),
             "timestamp": datetime.datetime.now().isoformat()
+        }), 500
+
+@app.route('/check_updates', methods=['POST'])
+def check_updates():
+    try:
+        data = request.get_json()
+        current_version = data.get('version')
+        
+        with open('version.json', 'r') as f:
+            version_info = json.load(f)
+        
+        latest_version = version_info.get('version')
+        download_url = version_info.get('download_url')
+        news = version_info.get('news')
+        
+        needs_update = latest_version > current_version
+        
+        return jsonify({
+            'success': True,
+            'needs_update': needs_update,
+            'download_url': download_url if needs_update else None,
+            'news': news
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Erro ao verificar updates: {str(e)}'
+        }), 500
+
+@app.route('/download_update', methods=['GET'])
+def download_update():
+    try:
+        # Verifica se o arquivo existe
+        if os.path.exists('latest_version.zip'):
+            return send_file(
+                'latest_version.zip',
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name='MG-SPOOFER_update.zip'
+            )
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Arquivo de update não encontrado'
+            }), 404
+            
+    except Exception as e:
+        return jsonify({
+            'success': False, 
+            'message': f'Erro ao baixar update: {str(e)}'
+        }), 500
+
+@app.route('/admin/update_info', methods=['POST'])
+def update_version_info():
+    try:
+        data = request.get_json()
+        
+        # Verifica credenciais de admin (adapte conforme sua autenticação)
+        username = data.get('username')
+        password = data.get('password')
+        
+        # Verifica se é admin no banco de dados
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT is_admin FROM users WHERE username = %s AND password = %s", 
+                   (username, password))
+        user = cur.fetchone()
+        
+        if not user or not user[0]:
+            return jsonify({
+                'success': False,
+                'message': 'Acesso não autorizado'
+            }), 403
+
+        # Atualiza o version.json
+        version_info = {
+            'version': data.get('version', '3.1.0'),
+            'download_url': data.get('download_url'),
+            'news': data.get('news')
+        }
+        
+        with open('version.json', 'w', encoding='utf-8') as f:
+            json.dump(version_info, f, ensure_ascii=False, indent=4)
+            
+        return jsonify({
+            'success': True,
+            'message': 'Informações atualizadas com sucesso'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Erro ao atualizar informações: {str(e)}'
         }), 500
 
 @app.route('/')

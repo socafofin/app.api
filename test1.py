@@ -15,7 +15,7 @@ from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, pyqtProperty, QTimer, QP
 from PyQt5.QtGui import QIcon, QPixmap, QColor, QDesktopServices
 from PyQt5.QtWidgets import (QApplication, QWidget, QLineEdit, QPushButton, 
                              QVBoxLayout, QLabel, QMessageBox, QFrame, 
-                             QStackedWidget, QHBoxLayout, QInputDialog, QProgressBar, QTextEdit, QDialog, QGraphicsOpacityEffect, QGraphicsDropShadowEffect)
+                             QStackedWidget, QHBoxLayout, QInputDialog, QProgressBar, QTextEdit, QDialog, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QProgressDialog)
 from cryptography.fernet import Fernet
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -48,7 +48,9 @@ ICON_PATH = os.path.join(RESOURCES_PATH, "icon.ico")
 BACKGROUND_PATH = os.path.join(RESOURCES_PATH, "background.png")
 DISCORD_ICON = os.path.join(RESOURCES_PATH, "discord.ico")
 _hwid_cache = None
-DISCORD_LINK = 'https://discord.gg/Kt7Du56e'  # Altere para seu link
+DISCORD_LINK = 'https://discord.gg/Kt7Du56e'
+CURRENT_VERSION = "3.1.0"
+UPDATE_CHECK_INTERVAL = 300000 # Altere para seu link
 
 
 load_dotenv()
@@ -576,6 +578,8 @@ class MainWindow(QWidget):
         # Adiciona o label após o navbar e inicia a animação
         main_layout.insertWidget(1, news_label)
         update_animation()
+        
+        self.init_update_button()
 
     def eventFilter(self, obj, event):
         if obj == self.btn_spoof and not obj.isEnabled():
@@ -1649,6 +1653,56 @@ class MainWindow(QWidget):
             return not any(os.path.exists(path) for path in fivem_paths)
         except:
             return False
+
+    def init_update_button(self):
+        """Inicializa o botão de atualização"""
+        self.btn_update = QPushButton("⬇️ Nova Versão Disponível")
+        self.btn_update.setStyleSheet('''
+            QPushButton {
+                padding: 8px 15px;
+                border: none;
+                border-radius: 8px;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 0,
+                    stop: 0 #32CD32,
+                    stop: 1 #228B22
+                );
+                color: white;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 0,
+                    stop: 0 #228B22,
+                    stop: 1 #32CD32
+                );
+            }
+        ''')
+        self.btn_update.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/MilGrauSpoofer/releases")))
+        self.btn_update.hide()
+        
+        if self.layout():
+            self.layout().insertWidget(1, self.btn_update)
+        
+        self.check_for_update()
+    
+    def check_for_update(self):
+        """Verifica se há atualização disponível"""
+        try:
+            response = requests.post(
+                f"{API_URL}/check_updates",
+                json={"version": CURRENT_VERSION},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data["needs_update"]:
+                    self.btn_update.show()
+                    
+        except Exception as e:
+            logging.error(f"Erro ao verificar updates: {str(e)}")
 
 def main():
     try:
