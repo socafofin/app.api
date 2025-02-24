@@ -372,26 +372,24 @@ def health_check():
             "timestamp": datetime.datetime.now().isoformat()
         }), 500
 
+# Variáveis globais para armazenar as informações
+current_news = "🔔 Bem-vindo ao MilGrau Spoofer"
+current_version = "3.1.0"
+current_download_url = "https://github.com/MilGrauSpoofer/releases"
+
 @app.route('/check_updates', methods=['POST'])
 def check_updates():
     try:
         data = request.get_json()
-        current_version = data.get('version')
+        client_version = data.get('version')
         
-        with open('version.json', 'r') as f:
-            version_info = json.load(f)
-        
-        latest_version = version_info.get('version')
-        download_url = version_info.get('download_url')
-        news = version_info.get('news')
-        
-        needs_update = latest_version > current_version
+        needs_update = current_version > client_version
         
         return jsonify({
             'success': True,
             'needs_update': needs_update,
-            'download_url': download_url if needs_update else None,
-            'news': news
+            'download_url': current_download_url if needs_update else None,
+            'news': current_news
         })
         
     except Exception as e:
@@ -400,60 +398,21 @@ def check_updates():
             'message': f'Erro ao verificar updates: {str(e)}'
         }), 500
 
-@app.route('/download_update', methods=['GET'])
-def download_update():
-    try:
-        # Verifica se o arquivo existe
-        if os.path.exists('latest_version.zip'):
-            return send_file(
-                'latest_version.zip',
-                mimetype='application/zip',
-                as_attachment=True,
-                download_name='MG-SPOOFER_update.zip'
-            )
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'Arquivo de update não encontrado'
-            }), 404
-            
-    except Exception as e:
-        return jsonify({
-            'success': False, 
-            'message': f'Erro ao baixar update: {str(e)}'
-        }), 500
-
+# Rota para atualizar as informações
 @app.route('/admin/update_info', methods=['POST'])
-def update_version_info():
+def update_info():
     try:
         data = request.get_json()
         
-        # Verifica credenciais de admin (adapte conforme sua autenticação)
-        username = data.get('username')
-        password = data.get('password')
+        # Atualiza variáveis globais
+        global current_news, current_version, current_download_url
         
-        # Verifica se é admin no banco de dados
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT is_admin FROM users WHERE username = %s AND password = %s", 
-                   (username, password))
-        user = cur.fetchone()
-        
-        if not user or not user[0]:
-            return jsonify({
-                'success': False,
-                'message': 'Acesso não autorizado'
-            }), 403
-
-        # Atualiza o version.json
-        version_info = {
-            'version': data.get('version', '3.1.0'),
-            'download_url': data.get('download_url'),
-            'news': data.get('news')
-        }
-        
-        with open('version.json', 'w', encoding='utf-8') as f:
-            json.dump(version_info, f, ensure_ascii=False, indent=4)
+        if 'news' in data:
+            current_news = data['news']
+        if 'version' in data:
+            current_version = data['version']
+        if 'download_url' in data:
+            current_download_url = data['download_url']
             
         return jsonify({
             'success': True,
