@@ -140,7 +140,7 @@ def generate_keys():
             "message": f"Erro interno: {str(e)}"
         }), 500
 
-@app.route('/register', methods['POST'])
+@app.route('/register', methods=['POST'])
 def register_user():
     try:
         data = request.get_json()
