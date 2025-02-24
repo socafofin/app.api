@@ -74,9 +74,9 @@ def generate_keys():
         data = request.get_json()
         generated_by = data.get('generatedBy')
         quantidade = data.get('quantidade', 1)
-        duracao_dias = data.get('duracao_dias', 30)
+        duracao_dias = data.get('duracao_dias', 30)  # Pegando a duração dos dias
 
-        logging.info(f"Tentativa de gerar key por: {generated_by}")
+        logging.info(f"Tentativa de gerar key por: {generated_by} com duração de {duracao_dias} dias")
 
         try:
             conn = psycopg2.connect(DATABASE_URL)
@@ -97,21 +97,27 @@ def generate_keys():
 
             # Gera nova key
             key = f"MGSP-{''.join(random.choices(string.ascii_uppercase + string.digits, k=16))}"
+            
+            # Calcula a data de expiração baseada na duração informada
             expiration_date = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
 
-            # Salva no banco (note o uso de key_value ao invés de key)
+            # Salva no banco incluindo a duração em dias
             cur.execute("""
-                INSERT INTO keys (key_value, expiration_date, generated_by)
-                VALUES (%s, %s, %s)
-                RETURNING key_value
-            """, (key, expiration_date, generated_by))
+                INSERT INTO keys (key_value, expiration_date, generated_by, duration_days)
+                VALUES (%s, %s, %s, %s)
+                RETURNING key_value, duration_days
+            """, (key, expiration_date, generated_by, duracao_dias))
             
+            key_data = cur.fetchone()
             conn.commit()
+
+            logging.info(f"Key gerada com sucesso: {key} - Duração: {duracao_dias} dias")
 
             return jsonify({
                 "success": True,
                 "key": key,
-                "expiration_date": expiration_date.isoformat()
+                "duration_days": duracao_dias,
+                "expiration_date": expiration_date.strftime("%d/%m/%Y")
             }), 201
 
         except Exception as e:
@@ -134,7 +140,7 @@ def generate_keys():
             "message": f"Erro interno: {str(e)}"
         }), 500
 
-@app.route('/register', methods=['POST'])
+@app.route('/register', methods['POST'])
 def register_user():
     try:
         data = request.get_json()
@@ -154,36 +160,29 @@ def register_user():
 
         # Verifica se a key é válida e não usada
         cur.execute("""
-            SELECT id, expiration_date, is_used, duration_days 
+            SELECT id, duration_days, is_used 
             FROM keys 
             WHERE key_value = %s
         """, (key,))
         
-        result = cur.fetchone()
-        
-        if not result:
-            return jsonify({
-                "success": False,
-                "message": "Key inválida"
-            }), 400
+        key_data = cur.fetchone()
+        if not key_data:
+            return jsonify({"success": False, "message": "Key inválida"}), 400
 
-        key_id, key_expiration, is_used, duration_days = result
+        key_id, duration_days, is_used = key_data
 
         if is_used:
-            return jsonify({
-                "success": False,
-                "message": "Key já utilizada"
-            }), 400
+            return jsonify({"success": False, "message": "Key já utilizada"}), 400
 
-        # Calcula a data de expiração do usuário
-        user_expiration = datetime.datetime.now() + datetime.timedelta(days=duration_days)
+        # Calcula a data de expiração usando a duração da key
+        expiration_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
 
-        # Insere o novo usuário com data de expiração
+        # Insere o usuário com a data de expiração correta
         cur.execute("""
-            INSERT INTO users (username, password, hwid, expiration_date, key_id)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO users (username, password, hwid, expiration_date)
+            VALUES (%s, %s, %s, %s)
             RETURNING id
-        """, (username, password, hwid, user_expiration, key_id))
+        """, (username, password, hwid, expiration_date))
         
         user_id = cur.fetchone()[0]
 
@@ -199,7 +198,7 @@ def register_user():
         return jsonify({
             "success": True,
             "message": "Usuário registrado com sucesso",
-            "expiration_date": user_expiration.strftime("%d/%m/%Y")
+            "expiration_date": expiration_date.strftime("%d/%m/%Y")
         }), 201
 
     except Exception as e:
