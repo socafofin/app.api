@@ -19,8 +19,10 @@ app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
         "origins": "*",
-        "methods": ["GET", "POST"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "methods": ["GET", "POST", "OPTIONS"],  # Adicionado OPTIONS
+        "allow_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
     }
 })
 
@@ -50,9 +52,8 @@ def log_response_time(response):
 @app.before_request
 def log_request_info():
     logging.info(f"Requisição recebida: {request.method} {request.url}")
-    logging.info(f"Cabeçalhos: {dict(request.headers)}")
-    if request.get_json():
-        logging.info(f"Dados JSON: {request.get_json()}")
+    logging.info(f"Headers: {dict(request.headers)}")
+    logging.info(f"Body: {request.get_data(as_text=True)}")
 
 @app.before_request
 def verify_content_type():
