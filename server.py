@@ -320,11 +320,15 @@ def check_expiration():
         now = datetime.datetime.now()
         remaining = expiration_date - now
         is_valid = expiration_date > now
+        # Calcula dias e horas restantes
+        remaining_days = remaining.days
+        remaining_hours = remaining.seconds // 3600  # Converte segundos para horas
 
         return jsonify({
             "valid": is_valid,
             "expirationDate": expiration_date.strftime("%d/%m/%Y"),
-            "remainingDays": remaining.days if is_valid else 0,
+            "remainingDays": remaining_days,
+            "remainingHours": remaining_hours,
             "message": "Licença válida" if is_valid else "Licença expirada"
         }), 200
 
