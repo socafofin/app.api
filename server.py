@@ -40,6 +40,24 @@ def get_db_connection():
     conn = psycopg2.connect(DATABASE_URL)
     return conn
 
+def authenticate_admin(username, password, hwid):
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT is_admin 
+            FROM users 
+            WHERE username = %s 
+            AND password = %s 
+            AND hwid = %s
+        """, (username, password, hwid))
+        
+        result = cursor.fetchone()
+        return bool(result and result[0])  # Retorna True se o usuário for admin
+        
+    except Exception as e:
+        logging.error(f"Erro na autenticação de admin: {str(e)}")
+        return False
+
 @app.before_request
 def start_timer():
     request.start_time = time.time()
@@ -431,27 +449,32 @@ def update_configs():
     try:
         data = request.json
         
-        # Verifica autenticação
-        user = authenticate_admin(
+        # Verifica se é admin
+        if not authenticate_admin(
             data.get('username'),
             data.get('password'),
             data.get('hwid')
-        )
-        
-        if not user:
+        ):
             return jsonify({
                 "success": False,
-                "message": "Acesso negado"
+                "message": "Acesso negado: usuário não é administrador"
             }), 403
 
-        # Atualiza configurações
-        configs = {
-            "version": data.get('version'),
-            "discord_link": data.get('discord_link'),
-            "news_message": data.get('news_message')
-        }
+        # Atualiza as configurações
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO configs 
+                (version, discord_link, news_message, updated_by)
+            VALUES 
+                (%s, %s, %s, %s)
+        """, (
+            data.get('version'),
+            data.get('discord_link'),
+            data.get('news_message'),
+            data.get('username')
+        ))
         
-        db.update_configs(configs, data.get('username'))
+        conn.commit()
         
         return jsonify({
             "success": True,
@@ -459,9 +482,11 @@ def update_configs():
         })
 
     except Exception as e:
+        logging.error(f"Erro ao atualizar configs: {str(e)}")
+        conn.rollback()
         return jsonify({
             "success": False,
-            "message": f"Erro: {str(e)}"
+            "message": f"Erro ao atualizar configurações: {str(e)}"
         }), 500
 
 @app.route('/get_configs', methods=['GET'])
@@ -493,21 +518,6 @@ def handle_exception(e):
     if request.get_json():
         logging.error(f"Dados JSON recebidos: {request.get_json()}")
     return jsonify({"success": False, "message": f"Erro interno do servidor: {str(e)}"}), 500
-
-def authenticate_admin(username, password, hwid):
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT is_admin FROM users 
-            WHERE username = %s AND password = %s AND hwid = %s
-        """, (username, password, hwid))
-        
-        result = cur.fetchone()
-        return result and result[0]  # Retorna True se o usuário for admin
-        
-    except Exception as e:
-        logging.error(f"Erro na autenticação de admin: {str(e)}")
-        return False
 
 if __name__ == '__main__':
     # Modo de desenvolvimento
