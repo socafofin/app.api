@@ -40,10 +40,15 @@ def get_db_connection():
     conn = psycopg2.connect(DATABASE_URL)
     return conn
 
+# Corrigir a função authenticate_admin
 def authenticate_admin(username, password, hwid):
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
+        # Obter conexão
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verificar se usuário existe e é admin
+        cur.execute("""
             SELECT is_admin 
             FROM users 
             WHERE username = %s 
@@ -51,8 +56,13 @@ def authenticate_admin(username, password, hwid):
             AND hwid = %s
         """, (username, password, hwid))
         
-        result = cursor.fetchone()
-        return bool(result and result[0])  # Retorna True se o usuário for admin
+        result = cur.fetchone()
+        
+        # Fechar cursor e conexão
+        cur.close()
+        conn.close()
+        
+        return bool(result and result[0])  # Retorna True se encontrou e é admin
         
     except Exception as e:
         logging.error(f"Erro na autenticação de admin: {str(e)}")
@@ -175,12 +185,17 @@ def register_user():
                 "message": "Dados incompletos"
             }), 400
 
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db_connection()
         cur = conn.cursor()
 
-        # Verifica se a key é válida e não usada
+        # Verifica se usuário já existe
+        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+        if cur.fetchone():
+            return jsonify({"success": False, "message": "Usuário já existe"}), 400
+
+        # Verifica se a key é válida
         cur.execute("""
-            SELECT id, duration_days, is_used 
+            SELECT id, duration_days, is_used, is_admin_key
             FROM keys 
             WHERE key_value = %s
         """, (key,))
@@ -189,27 +204,26 @@ def register_user():
         if not key_data:
             return jsonify({"success": False, "message": "Key inválida"}), 400
 
-        key_id, duration_days, is_used = key_data
+        key_id, duration_days, is_used, is_admin_key = key_data
 
         if is_used:
             return jsonify({"success": False, "message": "Key já utilizada"}), 400
 
-        # Calcula a data de expiração usando a duração da key
         expiration_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
 
-        # Insere o usuário com a data de expiração correta
+        # Insere usuário com status admin se a key for admin
         cur.execute("""
-            INSERT INTO users (username, password, hwid, expiration_date)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO users (username, password, hwid, expiration_date, is_admin)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id
-        """, (username, password, hwid, expiration_date))
+        """, (username, password, hwid, expiration_date, is_admin_key))
         
         user_id = cur.fetchone()[0]
 
-        # Marca a key como usada
+        # Atualiza key
         cur.execute("""
             UPDATE keys 
-            SET is_used = TRUE, user_id = %s
+            SET is_used = TRUE, user_id = %s, used_at = CURRENT_TIMESTAMP
             WHERE id = %s
         """, (user_id, key_id))
         
@@ -218,7 +232,8 @@ def register_user():
         return jsonify({
             "success": True,
             "message": "Usuário registrado com sucesso",
-            "expiration_date": expiration_date.strftime("%d/%m/%Y")
+            "expiration_date": expiration_date.strftime("%d/%m/%Y"),
+            "is_admin": is_admin_key
         }), 201
 
     except Exception as e:
@@ -269,29 +284,76 @@ def validate_key():
 # 1. Modifique a rota de login para corresponder ao client
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    logging.info(f"Requisição de login recebida: {data}")
-    username = data.get('username')
-    password = data.get('password')
-    hwid = data.get('hwid')
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        hwid = data.get('hwid')
 
-    if not all([username, password, hwid]):
-        logging.error("Dados incompletos")
-        return jsonify({"success": False, "message": "Dados incompletos"}), 400
+        if not all([username, password, hwid]):
+            return jsonify({"success": False, "message": "Dados incompletos"}), 400
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT password, is_admin FROM users WHERE username = %s", (username,))
-    user = cur.fetchone()
-    cur.close()
-    conn.close()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verifica credenciais e status
+        cur.execute("""
+            SELECT 
+                password, 
+                is_admin, 
+                expiration_date,
+                hwid
+            FROM users 
+            WHERE username = %s
+        """, (username,))
+        
+        user = cur.fetchone()
+        
+        if not user:
+            return jsonify({"success": False, "message": "Usuário não encontrado"}), 401
+            
+        stored_password, is_admin, expiration_date, stored_hwid = user
 
-    if user and user[0] == password:
-        logging.info(f"Login bem-sucedido para usuário: {username}")
-        return jsonify({"success": True, "isAdmin": user[1]})
-    else:
-        logging.error(f"Falha no login para usuário: {username}")
-        return jsonify({"success": False, "message": "Usuário ou senha incorretos"}), 401
+        # Verifica senha
+        if stored_password != password:
+            return jsonify({"success": False, "message": "Senha incorreta"}), 401
+
+        # Verifica HWID
+        if stored_hwid != hwid:
+            return jsonify({"success": False, "message": "HWID inválido"}), 401
+
+        # Se for admin, não verifica expiração
+        if is_admin:
+            return jsonify({
+                "success": True,
+                "isAdmin": True,
+                "message": "Login bem-sucedido (Admin)"
+            })
+
+        # Verifica expiração para usuários normais
+        if expiration_date and datetime.datetime.now() > expiration_date:
+            return jsonify({
+                "success": False,
+                "message": "Licença expirada"
+            }), 401
+
+        return jsonify({
+            "success": True,
+            "isAdmin": False,
+            "expirationDate": expiration_date.strftime("%d/%m/%Y")
+        })
+
+    except Exception as e:
+        logging.error(f"Erro no login: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Erro interno do servidor"
+        }), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/check_expiration', methods=['POST'])
 def check_expiration():
@@ -443,13 +505,14 @@ def update_info():
             'message': f'Erro ao atualizar informações: {str(e)}'
         }), 500
 
-# Rota para atualizar configurações
+# Corrigir a rota update_configs
 @app.route('/update_configs', methods=['POST'])
 def update_configs():
     try:
         data = request.json
+        conn = get_db_connection()
         
-        # Verifica se é admin
+        # Verificar admin
         if not authenticate_admin(
             data.get('username'),
             data.get('password'),
@@ -460,9 +523,9 @@ def update_configs():
                 "message": "Acesso negado: usuário não é administrador"
             }), 403
 
-        # Atualiza as configurações
-        cursor = conn.cursor()
-        cursor.execute("""
+        # Atualizar configs
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO configs 
                 (version, discord_link, news_message, updated_by)
             VALUES 
@@ -475,6 +538,8 @@ def update_configs():
         ))
         
         conn.commit()
+        cur.close()
+        conn.close()
         
         return jsonify({
             "success": True,
@@ -483,7 +548,6 @@ def update_configs():
 
     except Exception as e:
         logging.error(f"Erro ao atualizar configs: {str(e)}")
-        conn.rollback()
         return jsonify({
             "success": False,
             "message": f"Erro ao atualizar configurações: {str(e)}"
