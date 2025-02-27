@@ -494,6 +494,21 @@ def handle_exception(e):
         logging.error(f"Dados JSON recebidos: {request.get_json()}")
     return jsonify({"success": False, "message": f"Erro interno do servidor: {str(e)}"}), 500
 
+def authenticate_admin(username, password, hwid):
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT is_admin FROM users 
+            WHERE username = %s AND password = %s AND hwid = %s
+        """, (username, password, hwid))
+        
+        result = cur.fetchone()
+        return result and result[0]  # Retorna True se o usuário for admin
+        
+    except Exception as e:
+        logging.error(f"Erro na autenticação de admin: {str(e)}")
+        return False
+
 if __name__ == '__main__':
     # Modo de desenvolvimento
     if os.environ.get('FLASK_ENV') == 'development':
