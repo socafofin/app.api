@@ -425,6 +425,37 @@ def update_info():
             'message': f'Erro ao atualizar informações: {str(e)}'
         }), 500
 
+# Rota para atualizar configurações
+@app.route('/update_configs', methods=['POST'])
+def update_configs():
+    try:
+        data = request.json
+        # Verifica se é admin
+        if not verify_admin(data.get('username'), data.get('password'), data.get('hwid')):
+            return jsonify({"success": False, "message": "Acesso negado"}), 403
+            
+        # Atualiza configurações no banco
+        configs = {
+            "version": data.get('version'),
+            "discord_link": data.get('discord_link'),
+            "news_message": data.get('news_message')
+        }
+        
+        db.update_configs(configs)
+        return jsonify({"success": True}), 200
+        
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+# Rota para obter configurações atuais
+@app.route('/get_configs', methods=['GET'])
+def get_configs():
+    try:
+        configs = db.get_configs()
+        return jsonify(configs), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/')
 def index():
     return jsonify({
