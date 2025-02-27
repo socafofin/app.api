@@ -430,29 +430,45 @@ def update_info():
 def update_configs():
     try:
         data = request.json
-        # Verifica se é admin
-        if not verify_admin(data.get('username'), data.get('password'), data.get('hwid')):
-            return jsonify({"success": False, "message": "Acesso negado"}), 403
-            
-        # Atualiza configurações no banco
+        
+        # Verifica autenticação
+        user = authenticate_admin(
+            data.get('username'),
+            data.get('password'),
+            data.get('hwid')
+        )
+        
+        if not user:
+            return jsonify({
+                "success": False,
+                "message": "Acesso negado"
+            }), 403
+
+        # Atualiza configurações
         configs = {
             "version": data.get('version'),
             "discord_link": data.get('discord_link'),
             "news_message": data.get('news_message')
         }
         
-        db.update_configs(configs)
-        return jsonify({"success": True}), 200
+        db.update_configs(configs, data.get('username'))
         
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({
+            "success": True,
+            "message": "Configurações atualizadas com sucesso"
+        })
 
-# Rota para obter configurações atuais
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Erro: {str(e)}"
+        }), 500
+
 @app.route('/get_configs', methods=['GET'])
 def get_configs():
     try:
         configs = db.get_configs()
-        return jsonify(configs), 200
+        return jsonify(configs)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
