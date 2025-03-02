@@ -463,12 +463,11 @@ def check_updates():
         data = request.get_json()
         client_version = data.get('version')
         
-        needs_update = current_version > client_version
-        
         return jsonify({
             'success': True,
-            'needs_update': needs_update,
-            'download_url': current_download_url if needs_update else None,
+            'needs_update': current_version > client_version,
+            'version': current_version,  # Adicionado para enviar versão atual
+            'download_url': current_download_url if current_version > client_version else None,
             'news': current_news
         })
         
