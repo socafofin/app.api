@@ -506,7 +506,7 @@ def update_info():
         }), 500
 
 # Corrigir a rota update_configs
-@app.route('/update_configs', methods['POST'])
+@app.route('/update_configs', methods=['POST'])  # Corrigido aqui
 def update_configs():
     try:
         data = request.json
