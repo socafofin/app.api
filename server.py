@@ -170,6 +170,93 @@ def generate_keys():
             "message": f"Erro interno: {str(e)}"
         }), 500
 
+@app.route('/generate_custom_key', methods=['POST'])
+def generate_custom_key():
+    try:
+        data = request.get_json()
+        logging.info(f"Dados recebidos: {data}")
+        
+        key_value = data.get('key_value')  # Formato personalizado da key
+        duracao_dias = int(data.get('duracao_dias', 0))
+        generated_by = data.get('generatedBy')
+        is_mod_key = data.get('is_mod_key', False)
+
+        # Validações
+        if not key_value or duracao_dias <= 0 or not generated_by:
+            return jsonify({
+                "success": False, 
+                "message": "Dados inválidos. Verifique os campos."
+            }), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Verifica se é admin
+        cur.execute("""
+            SELECT is_admin FROM users 
+            WHERE username = %s
+        """, (generated_by,))
+        
+        result = cur.fetchone()
+        if not result or not result[0]:
+            return jsonify({
+                "success": False,
+                "message": "Apenas administradores podem gerar keys"
+            }), 403
+
+        # Verifica se a key já existe
+        cur.execute("SELECT key_value FROM keys WHERE key_value = %s", (key_value,))
+        if cur.fetchone():
+            return jsonify({
+                "success": False,
+                "message": "Esta key já existe!"
+            }), 400
+
+        expiration_date = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
+
+        # Usa diretamente o key_value fornecido (sem prefixo MGSP-)
+        cur.execute("""
+            INSERT INTO keys (
+                key_value, 
+                expiration_date, 
+                generated_by, 
+                duration_days,
+                is_used,
+                is_admin_key,
+                created_at
+            ) VALUES (%s, %s, %s, %s, FALSE, %s, NOW())
+            RETURNING key_value, expiration_date, duration_days
+        """, (key_value, expiration_date, generated_by, duracao_dias, is_mod_key))
+
+        key_data = cur.fetchone()
+        conn.commit()
+
+        if key_data:
+            key_value, exp_date, duration = key_data
+            return jsonify({
+                "success": True,
+                "key": key_value,  # Retorna a key exatamente como foi fornecida
+                "duration_days": duration,
+                "expiration_date": exp_date.strftime("%d/%m/%Y"),
+                "is_mod_key": is_mod_key
+            }), 201
+        else:
+            raise Exception("Falha ao gerar key personalizada")
+
+    except Exception as e:
+        logging.error(f"Erro ao gerar key personalizada: {str(e)}")
+        if 'conn' in locals():
+            conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao gerar key personalizada: {str(e)}"
+        }), 500
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
 @app.route('/register', methods=['POST'])
 def register_user():
     try:
@@ -506,7 +593,7 @@ def update_info():
         }), 500
 
 # Corrigir a rota update_configs
-@app.route('/update_configs', methods=['POST'])  # Corrigido aqui
+@app.route('/update_configs', methods=['POST'])
 def update_configs():
     try:
         data = request.json
@@ -582,94 +669,6 @@ def handle_exception(e):
     if request.get_json():
         logging.error(f"Dados JSON recebidos: {request.get_json()}")
     return jsonify({"success": False, "message": f"Erro interno do servidor: {str(e)}"}), 500
-
-@app.route('/generate_custom_key', methods=['POST'])
-def generate_custom_key():
-    try:
-        data = request.get_json()
-        
-        # Log dos dados recebidos para debug
-        logging.info(f"Dados recebidos: {data}")
-        
-        key_value = data.get('key_value')
-        duracao_dias = int(data.get('duracao_dias', 0))  # Forçar conversão para int
-        generated_by = data.get('generatedBy')
-        is_mod_key = data.get('is_mod_key', False)  # Novo campo
-
-        # Validações
-        if not key_value or duracao_dias <= 0 or not generated_by:
-            return jsonify({
-                "success": False, 
-                "message": "Dados inválidos. Verifique os campos."
-            }), 400
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        # Verifica se é admin
-        cur.execute("""
-            SELECT is_admin FROM users 
-            WHERE username = %s
-        """, (generated_by,))
-        
-        result = cur.fetchone()
-        if not result or not result[0]:
-            return jsonify({
-                "success": False,
-                "message": "Apenas administradores podem gerar keys"
-            }), 403
-
-        # Calcula a data de expiração
-        expiration_date = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
-
-        # Insere a key personalizada na tabela keys (usando a mesma tabela)
-        cur.execute("""
-            INSERT INTO keys (
-                key_value, 
-                expiration_date, 
-                generated_by, 
-                duration_days,
-                is_used,
-                is_admin_key,  # Alterado para is_mod_key se for key de moderador
-                created_at
-            ) VALUES (%s, %s, %s, %s, FALSE, %s, NOW())
-            RETURNING key_value, expiration_date, duration_days
-        """, (key_value, expiration_date, generated_by, duracao_dias, is_mod_key))
-
-        key_data = cur.fetchone()
-        conn.commit()
-
-        if key_data:
-            key_value, exp_date, duration = key_data
-            return jsonify({
-                "success": True,
-                "key": key_value,
-                "duration_days": duration,
-                "expiration_date": exp_date.strftime("%d/%m/%Y"),
-                "is_mod_key": is_mod_key
-            }), 201
-        else:
-            raise Exception("Falha ao gerar key personalizada")
-
-    except ValueError as ve:
-        logging.error(f"Erro de validação: {str(ve)}")
-        return jsonify({
-            "success": False,
-            "message": "Número de dias inválido"
-        }), 400
-    except Exception as e:
-        logging.error(f"Erro ao gerar key personalizada: {str(e)}")
-        if 'conn' in locals():
-            conn.rollback()
-        return jsonify({
-            "success": False,
-            "message": f"Erro ao gerar key personalizada: {str(e)}"
-        }), 500
-    finally:
-        if 'cur' in locals():
-            cur.close()
-        if 'conn' in locals():
-            conn.close()
 
 if __name__ == '__main__':
     # Modo de desenvolvimento
