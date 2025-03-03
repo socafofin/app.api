@@ -463,11 +463,12 @@ def check_updates():
         data = request.get_json()
         client_version = data.get('version')
         
+        needs_update = current_version > client_version
+        
         return jsonify({
             'success': True,
-            'needs_update': current_version > client_version,
-            'version': current_version,  # Adicionado para enviar versão atual
-            'download_url': current_download_url if current_version > client_version else None,
+            'needs_update': needs_update,
+            'download_url': current_download_url if needs_update else None,
             'news': current_news
         })
         
@@ -581,6 +582,78 @@ def handle_exception(e):
     if request.get_json():
         logging.error(f"Dados JSON recebidos: {request.get_json()}")
     return jsonify({"success": False, "message": f"Erro interno do servidor: {str(e)}"}), 500
+
+@app.route('/generate_custom_key', methods=['POST'])
+def generate_custom_key():
+    try:
+        data = request.get_json()
+        key_format = data.get('key_value')
+        dias = data.get('duracao_dias')
+        generated_by = data.get('generatedBy')
+
+        if not all([key_format, dias, generated_by]):
+            return jsonify({"success": False, "message": "Dados incompletos"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Verifica se é admin
+        cur.execute("""
+            SELECT is_admin FROM users 
+            WHERE username = %s
+        """, (generated_by,))
+        
+        result = cur.fetchone()
+        if not result or not result[0]:
+            return jsonify({
+                "success": False,
+                "message": "Apenas administradores podem gerar keys"
+            }), 403
+
+        # Gera a key personalizada
+        expiration_date = datetime.datetime.now() + datetime.timedelta(days=dias)
+
+        # Insere a key personalizada
+        cur.execute("""
+            INSERT INTO custom_keys (
+                key_value, 
+                expiration_date, 
+                generated_by, 
+                duration_days,
+                is_used,
+                is_admin_key,
+                created_at
+            ) VALUES (%s, %s, %s, %s, FALSE, FALSE, NOW())
+            RETURNING key_value, expiration_date
+        """, (key_format, expiration_date, generated_by, dias))
+
+        key_data = cur.fetchone()
+        conn.commit()
+
+        if key_data:
+            key_value, exp_date = key_data
+            return jsonify({
+                "success": True,
+                "key": key_value,
+                "duration_days": dias,
+                "expiration_date": exp_date.strftime("%d/%m/%Y")
+            }), 201
+        else:
+            raise Exception("Falha ao gerar key personalizada")
+
+    except Exception as e:
+        logging.error(f"Erro ao gerar key personalizada: {str(e)}")
+        if 'conn' in locals():
+            conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao gerar key personalizada: {str(e)}"
+        }), 500
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
 
 if __name__ == '__main__':
     # Modo de desenvolvimento
