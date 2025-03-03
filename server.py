@@ -506,7 +506,7 @@ def update_info():
         }), 500
 
 # Corrigir a rota update_configs
-@app.route('/update_configs', methods=['POST'])
+@app.route('/update_configs', methods['POST'])
 def update_configs():
     try:
         data = request.json
@@ -587,12 +587,20 @@ def handle_exception(e):
 def generate_custom_key():
     try:
         data = request.get_json()
-        key_format = data.get('key_value')
-        dias = data.get('duracao_dias')
+        
+        # Log dos dados recebidos para debug
+        logging.info(f"Dados recebidos: {data}")
+        
+        key_value = data.get('key_value')
+        duracao_dias = int(data.get('duracao_dias', 0))  # Forçar conversão para int
         generated_by = data.get('generatedBy')
 
-        if not all([key_format, dias, generated_by]):
-            return jsonify({"success": False, "message": "Dados incompletos"}), 400
+        # Validações
+        if not key_value or duracao_dias <= 0 or not generated_by:
+            return jsonify({
+                "success": False, 
+                "message": "Dados inválidos. Verifique os campos."
+            }), 400
 
         conn = get_db_connection()
         cur = conn.cursor()
@@ -610,37 +618,42 @@ def generate_custom_key():
                 "message": "Apenas administradores podem gerar keys"
             }), 403
 
-        # Gera a key personalizada
-        expiration_date = datetime.datetime.now() + datetime.timedelta(days=dias)
+        # Calcula a data de expiração
+        expiration_date = datetime.datetime.now() + datetime.timedelta(days=duracao_dias)
 
-        # Insere a key personalizada
+        # Insere a key personalizada na tabela keys (usando a mesma tabela)
         cur.execute("""
-            INSERT INTO custom_keys (
+            INSERT INTO keys (
                 key_value, 
                 expiration_date, 
                 generated_by, 
                 duration_days,
                 is_used,
-                is_admin_key,
-                created_at
-            ) VALUES (%s, %s, %s, %s, FALSE, FALSE, NOW())
-            RETURNING key_value, expiration_date
-        """, (key_format, expiration_date, generated_by, dias))
+                is_admin_key
+            ) VALUES (%s, %s, %s, %s, FALSE, FALSE)
+            RETURNING key_value, expiration_date, duration_days
+        """, (key_value, expiration_date, generated_by, duracao_dias))
 
         key_data = cur.fetchone()
         conn.commit()
 
         if key_data:
-            key_value, exp_date = key_data
+            key_value, exp_date, duration = key_data
             return jsonify({
                 "success": True,
                 "key": key_value,
-                "duration_days": dias,
+                "duration_days": duration,
                 "expiration_date": exp_date.strftime("%d/%m/%Y")
             }), 201
         else:
             raise Exception("Falha ao gerar key personalizada")
 
+    except ValueError as ve:
+        logging.error(f"Erro de validação: {str(ve)}")
+        return jsonify({
+            "success": False,
+            "message": "Número de dias inválido"
+        }), 400
     except Exception as e:
         logging.error(f"Erro ao gerar key personalizada: {str(e)}")
         if 'conn' in locals():
