@@ -594,6 +594,7 @@ def generate_custom_key():
         key_value = data.get('key_value')
         duracao_dias = int(data.get('duracao_dias', 0))  # Forçar conversão para int
         generated_by = data.get('generatedBy')
+        is_mod_key = data.get('is_mod_key', False)  # Novo campo
 
         # Validações
         if not key_value or duracao_dias <= 0 or not generated_by:
@@ -629,10 +630,11 @@ def generate_custom_key():
                 generated_by, 
                 duration_days,
                 is_used,
-                is_admin_key
-            ) VALUES (%s, %s, %s, %s, FALSE, FALSE)
+                is_admin_key,  # Alterado para is_mod_key se for key de moderador
+                created_at
+            ) VALUES (%s, %s, %s, %s, FALSE, %s, NOW())
             RETURNING key_value, expiration_date, duration_days
-        """, (key_value, expiration_date, generated_by, duracao_dias))
+        """, (key_value, expiration_date, generated_by, duracao_dias, is_mod_key))
 
         key_data = cur.fetchone()
         conn.commit()
@@ -643,7 +645,8 @@ def generate_custom_key():
                 "success": True,
                 "key": key_value,
                 "duration_days": duration,
-                "expiration_date": exp_date.strftime("%d/%m/%Y")
+                "expiration_date": exp_date.strftime("%d/%m/%Y"),
+                "is_mod_key": is_mod_key
             }), 201
         else:
             raise Exception("Falha ao gerar key personalizada")
