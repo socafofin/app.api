@@ -662,6 +662,81 @@ def index():
         ]
     })
 
+@app.route('/reset_hwid', methods=['POST'])
+def reset_hwid():
+    """Rota para resetar o HWID de um usuário"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        admin_username = data.get('admin')
+        
+        logging.info(f"Tentativa de resetar HWID para o usuário {username} por {admin_username}")
+        
+        # Validar dados
+        if not username or not admin_username:
+            return jsonify({
+                "success": False, 
+                "message": "Dados incompletos. Necessário informar username e admin."
+            }), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verificar se o solicitante é admin
+        cur.execute("""
+            SELECT is_admin FROM users 
+            WHERE username = %s
+        """, (admin_username,))
+        
+        admin_check = cur.fetchone()
+        if not admin_check or not admin_check[0]:
+            cur.close()
+            conn.close()
+            logging.warning(f"Tentativa não autorizada de resetar HWID por {admin_username}")
+            return jsonify({
+                "success": False,
+                "message": "Apenas administradores podem resetar HWID"
+            }), 403
+        
+        # Verificar se o usuário existe
+        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+        user = cur.fetchone()
+        
+        if not user:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": f"Usuário {username} não encontrado"
+            }), 404
+        
+        # Resetar o HWID
+        cur.execute("UPDATE users SET hwid = NULL WHERE username = %s", (username,))
+        conn.commit()
+        
+        logging.info(f"HWID resetado com sucesso para o usuário {username} por {admin_username}")
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "message": f"HWID do usuário {username} foi resetado com sucesso"
+        })
+        
+    except Exception as e:
+        logging.error(f"Erro ao resetar HWID: {str(e)}")
+        if 'conn' in locals() and conn:
+            conn.rollback()
+            if 'cur' in locals() and cur:
+                cur.close()
+            conn.close()
+            
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao resetar HWID: {str(e)}"
+        }), 500
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     logging.error(f"Erro não tratado: {str(e)}", exc_info=True)
