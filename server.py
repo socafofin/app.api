@@ -405,8 +405,20 @@ def login():
         if stored_password != password:
             return jsonify({"success": False, "message": "Senha incorreta"}), 401
 
-        # Verifica HWID
-        if stored_hwid != hwid:
+        # Verifica HWID ou atualiza se foi resetado (NULL)
+        if stored_hwid is None:
+            # HWID foi resetado, vamos atualizar com o novo
+            logging.info(f"Atualizando HWID do usuário {username} após reset")
+            
+            try:
+                cur.execute("UPDATE users SET hwid = %s WHERE username = %s", (hwid, username))
+                conn.commit()
+                logging.info(f"HWID atualizado com sucesso para {username}")
+            except Exception as e:
+                conn.rollback()
+                logging.error(f"Erro ao atualizar HWID: {str(e)}")
+                # Continua o login mesmo se falhar a atualização
+        elif stored_hwid != hwid:
             return jsonify({"success": False, "message": "HWID inválido"}), 401
 
         # Se for admin, não verifica expiração
