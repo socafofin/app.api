@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 import psycopg2
+import psycopg2.extras  # Adicionando import necessário para DictCursor
 import secrets
 import datetime
 import logging
@@ -10,6 +11,7 @@ import time
 import random
 import string
 import json
+import hashlib
 
 load_dotenv()
 
@@ -258,84 +260,58 @@ def generate_custom_key():
             conn.close()
 
 @app.route('/register', methods=['POST'])
-def register_user():
+def register():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    email = data.get('email')
+    key = data.get('key')
+    hwid = data.get('hwid')
+    vmid = data.get('vmid')
+    
+    # Verificações de dados
+    if not username or not password or not email or not key or not hwid:
+        return jsonify({"success": False, "message": "Dados incompletos"})
+    
+    # Verificação da chave
+    conn = get_db_connection()
+    # Usar DictCursor para acessar os resultados como dicionário
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM keys WHERE key_value = %s AND is_used = false", [key])
+    key_record = cur.fetchone()
+    
+    if not key_record:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Chave inválida ou já utilizada"})
+    
+    # Verificar usuário existente
+    cur.execute("SELECT * FROM users WHERE username = %s", [username])
+    if cur.fetchone():
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Nome de usuário já existe"})
+    
+    # Hash da senha
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    
+    # MODIFICADO: Adicionado vmid na inserção
     try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        key = data.get('key')
-        hwid = data.get('hwid')
-
-        if not all([username, password, key, hwid]):
-            return jsonify({
-                "success": False,
-                "message": "Dados incompletos"
-            }), 400
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        # Verifica se usuário já existe
-        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-        if cur.fetchone():
-            return jsonify({"success": False, "message": "Usuário já existe"}), 400
-
-        # Verifica se a key é válida
-        cur.execute("""
-            SELECT id, duration_days, is_used, is_admin_key
-            FROM keys 
-            WHERE key_value = %s
-        """, (key,))
-        
-        key_data = cur.fetchone()
-        if not key_data:
-            return jsonify({"success": False, "message": "Key inválida"}), 400
-
-        key_id, duration_days, is_used, is_admin_key = key_data
-
-        if is_used:
-            return jsonify({"success": False, "message": "Key já utilizada"}), 400
-
-        expiration_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
-
-        # Insere usuário com status admin se a key for admin
-        cur.execute("""
-            INSERT INTO users (username, password, hwid, expiration_date, is_admin)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """, (username, password, hwid, expiration_date, is_admin_key))
-        
-        user_id = cur.fetchone()[0]
-
-        # Atualiza key
-        cur.execute("""
-            UPDATE keys 
-            SET is_used = TRUE, user_id = %s, used_at = CURRENT_TIMESTAMP
-            WHERE id = %s
-        """, (user_id, key_id))
-        
+        cur.execute(
+            "INSERT INTO users (username, password, email, hwid, vmid) VALUES (%s, %s, %s, %s, %s)",
+            [username, hashed_password, email, hwid, vmid]
+        )
+        cur.execute("UPDATE keys SET is_used = true, used_by = %s, used_at = CURRENT_TIMESTAMP WHERE key_value = %s", 
+                      [username, key])
         conn.commit()
-
-        return jsonify({
-            "success": True,
-            "message": "Usuário registrado com sucesso",
-            "expiration_date": expiration_date.strftime("%d/%m/%Y"),
-            "is_admin": is_admin_key
-        }), 201
-
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "message": "Registro concluído com sucesso!"})
     except Exception as e:
-        logging.error(f"Erro ao registrar usuário: {str(e)}")
-        if conn:
-            conn.rollback()
-        return jsonify({
-            "success": False,
-            "message": "Erro interno do servidor"
-        }), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+        conn.rollback()
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": f"Erro ao registrar: {str(e)}"})
 
 @app.route('/validate_key', methods=['POST'])
 def validate_key():
@@ -371,88 +347,56 @@ def validate_key():
 # 1. Modifique a rota de login para corresponder ao client
 @app.route('/login', methods=['POST'])
 def login():
-    try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        hwid = data.get('hwid')
-
-        if not all([username, password, hwid]):
-            return jsonify({"success": False, "message": "Dados incompletos"}), 400
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Verifica credenciais e status
-        cur.execute("""
-            SELECT 
-                password, 
-                is_admin, 
-                expiration_date,
-                hwid
-            FROM users 
-            WHERE username = %s
-        """, (username,))
-        
-        user = cur.fetchone()
-        
-        if not user:
-            return jsonify({"success": False, "message": "Usuário não encontrado"}), 401
-            
-        stored_password, is_admin, expiration_date, stored_hwid = user
-
-        # Verifica senha
-        if stored_password != password:
-            return jsonify({"success": False, "message": "Senha incorreta"}), 401
-
-        # Verifica HWID ou atualiza se foi resetado (NULL)
-        if stored_hwid is None:
-            # HWID foi resetado, vamos atualizar com o novo
-            logging.info(f"Atualizando HWID do usuário {username} após reset")
-            
-            try:
-                cur.execute("UPDATE users SET hwid = %s WHERE username = %s", (hwid, username))
-                conn.commit()
-                logging.info(f"HWID atualizado com sucesso para {username}")
-            except Exception as e:
-                conn.rollback()
-                logging.error(f"Erro ao atualizar HWID: {str(e)}")
-                # Continua o login mesmo se falhar a atualização
-        elif stored_hwid != hwid:
-            return jsonify({"success": False, "message": "HWID inválido"}), 401
-
-        # Se for admin, não verifica expiração
-        if is_admin:
-            return jsonify({
-                "success": True,
-                "isAdmin": True,
-                "message": "Login bem-sucedido (Admin)"
-            })
-
-        # Verifica expiração para usuários normais
-        if expiration_date and datetime.datetime.now() > expiration_date:
-            return jsonify({
-                "success": False,
-                "message": "Licença expirada"
-            }), 401
-
-        return jsonify({
-            "success": True,
-            "isAdmin": False,
-            "expirationDate": expiration_date.strftime("%d/%m/%Y")
-        })
-
-    except Exception as e:
-        logging.error(f"Erro no login: {str(e)}")
-        return jsonify({
-            "success": False,
-            "message": f"Erro interno do servidor"
-        }), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    hwid = data.get('hwid')
+    vmid = data.get('vmid')
+    
+    if not username or not password:
+        return jsonify({"success": False, "message": "Dados incompletos"})
+    
+    # Hash da senha
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    
+    # Verificar credenciais
+    conn = get_db_connection()
+    # Usar DictCursor para acessar os resultados como dicionário
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM users WHERE username = %s AND password = %s", [username, hashed_password])
+    user = cur.fetchone()
+    
+    if not user:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Usuário ou senha incorretos"})
+    
+    # MODIFICADO: Verificar hwid OU vmid
+    # Agora podemos acessar os campos como um dicionário
+    if hwid != user['hwid'] and vmid != user['vmid'] and user['hwid'] != '0':
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "HWID incorreto. Você não pode usar esta licença neste computador."})
+    
+    # NOVO: Atualizar hwid se login feito por vmid
+    if vmid == user['vmid'] and hwid != user['hwid'] and user['hwid'] != '0':
+        try:
+            cur.execute("UPDATE users SET hwid = %s WHERE username = %s", [hwid, username])
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+    
+    # Fechar recursos
+    cur.close()
+    conn.close()
+    
+    # Login bem-sucedido
+    return jsonify({
+        "success": True,
+        "message": "Login bem-sucedido",
+        "username": user['username'],
+        "isAdmin": user.get('is_admin', False)
+    })
 
 @app.route('/check_expiration', methods=['POST'])
 def check_expiration():
