@@ -749,6 +749,179 @@ def reset_hwid():
             "message": f"Erro ao resetar HWID: {str(e)}"
         }), 500
 
+@app.route('/verify_key', methods=['POST'])
+def verify_key():
+    """Rota para verificar informações de uma chave"""
+    try:
+        data = request.get_json()
+        key = data.get('key')
+        
+        logging.info(f"Tentativa de verificar informações da chave: {key}")
+        
+        # Validar dados
+        if not key:
+            return jsonify({
+                "success": False, 
+                "message": "Dados incompletos. Necessário informar a chave."
+            }), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verificar se a chave existe
+        cur.execute("""
+            SELECT 
+                k.key_value,
+                k.expiration_date,
+                k.is_used,
+                k.user_id,
+                u.username,
+                u.hwid
+            FROM 
+                keys k
+                LEFT JOIN users u ON k.user_id = u.id
+            WHERE 
+                k.key_value = %s
+        """, (key,))
+        
+        key_info = cur.fetchone()
+        
+        if not key_info:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": f"Chave '{key}' não encontrada"
+            }), 404
+        
+        key_value, expiry_date, is_used, user_id, username, hwid = key_info
+        
+        # Determinar status da chave
+        current_date = datetime.datetime.now()
+        
+        if is_used and user_id:
+            if expiry_date and current_date > expiry_date:
+                status = "Expirado"
+            else:
+                status = "Ativo"
+        else:
+            status = "Não Ativado"
+        
+        # Formatação da data para exibição
+        expiration_date_str = expiry_date.strftime("%d/%m/%Y") if expiry_date else "N/A"
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "key": key_value,
+            "status": status,
+            "username": username if username else "Não Associado",
+            "hwid": hwid if hwid else "Não Associado",
+            "expirationDate": expiration_date_str,
+            "isUsed": is_used
+        })
+        
+    except Exception as e:
+        logging.error(f"Erro ao verificar chave: {str(e)}")
+        if 'conn' in locals() and conn:
+            if 'cur' in locals() and cur:
+                cur.close()
+            conn.close()
+            
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao verificar chave: {str(e)}"
+        }), 500
+
+@app.route('/verify_user', methods=['POST'])
+def verify_user():
+    """Rota para verificar informações de um usuário"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        admin_username = data.get('admin')
+        
+        logging.info(f"Tentativa de verificar informações do usuário: {username} por {admin_username}")
+        
+        # Validar dados
+        if not username or not admin_username:
+            return jsonify({
+                "success": False, 
+                "message": "Dados incompletos. Necessário informar o usuário e o administrador."
+            }), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verificar se o requisitante é um administrador
+        cur.execute("SELECT is_admin FROM users WHERE username = %s", (admin_username,))
+        admin_check = cur.fetchone()
+        
+        if not admin_check or not admin_check[0]:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Apenas administradores podem verificar informações de usuários."
+            }), 403
+        
+        # Verificar se o usuário existe
+        cur.execute("""
+            SELECT username, hwid, expiration_date, is_admin 
+            FROM users 
+            WHERE username = %s
+        """, (username,))
+        
+        user_info = cur.fetchone()
+        
+        if not user_info:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": f"Usuário '{username}' não encontrado."
+            }), 404
+        
+        username_db, hwid_db, expiry_date_db, is_admin_db = user_info
+        
+        # Define o status baseado na data de expiração e status de admin
+        if is_admin_db:
+            status = "Administrador"
+        elif expiry_date_db and datetime.datetime.now() <= expiry_date_db:
+            status = "Ativo"
+        elif expiry_date_db:
+            status = "Expirado"
+        else:
+            status = "Desconhecido"
+        
+        # Formato da data de expiração
+        expiry_str = expiry_date_db.strftime("%d/%m/%Y") if expiry_date_db else "Não aplicável"
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "username": username_db,
+            "status": status,
+            "hwid": hwid_db if hwid_db else "Não definido",
+            "expiration_date": expiry_str
+        })
+        
+    except Exception as e:
+        logging.error(f"Erro ao verificar usuário: {str(e)}")
+        if 'conn' in locals() and conn:
+            if 'cur' in locals() and cur:
+                cur.close()
+            conn.close()
+            
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao verificar usuário: {str(e)}"
+        }), 500
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     logging.error(f"Erro não tratado: {str(e)}", exc_info=True)
