@@ -292,14 +292,11 @@ def register():
         conn.close()
         return jsonify({"success": False, "message": "Nome de usuário já existe"})
     
-    # Hash da senha
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    
     # MODIFICADO: Adicionado vmid na inserção
     try:
         cur.execute(
             "INSERT INTO users (username, password, email, hwid, vmid) VALUES (%s, %s, %s, %s, %s)",
-            [username, hashed_password, email, hwid, vmid]
+            [username, password, email, hwid, vmid]
         )
         cur.execute("UPDATE keys SET is_used = true, used_by = %s, used_at = CURRENT_TIMESTAMP WHERE key_value = %s", 
                       [username, key])
@@ -356,14 +353,14 @@ def login():
     if not username or not password:
         return jsonify({"success": False, "message": "Dados incompletos"})
     
-    # Hash da senha
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    # Não aplicar hash na senha - usar diretamente como enviada pelo cliente
+    # A senha está armazenada como texto simples no PostgreSQL
     
     # Verificar credenciais
     conn = get_db_connection()
     # Usar DictCursor para acessar os resultados como dicionário
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM users WHERE username = %s AND password = %s", [username, hashed_password])
+    cur.execute("SELECT * FROM users WHERE username = %s AND password = %s", [username, password])
     user = cur.fetchone()
     
     if not user:
