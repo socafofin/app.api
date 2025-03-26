@@ -292,22 +292,36 @@ def register():
         conn.close()
         return jsonify({"success": False, "message": "Nome de usuário já existe"})
     
-    # MODIFICADO: Adicionado vmid na inserção
+    # Obter data de expiração da chave
+    expiration_date = key_record['expiration_date']
+    is_admin_key = key_record['is_admin_key']
+    
+    # Registrar usuário com a data de expiração da chave
     try:
         cur.execute(
-            "INSERT INTO users (username, password, email, hwid, vmid) VALUES (%s, %s, %s, %s, %s)",
-            [username, password, email, hwid, vmid]
+            "INSERT INTO users (username, password, email, hwid, vmid, expiration_date, is_admin) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            [username, password, email, hwid, vmid, expiration_date, is_admin_key]
         )
         cur.execute("UPDATE keys SET is_used = true, used_by = %s, used_at = CURRENT_TIMESTAMP WHERE key_value = %s", 
                       [username, key])
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"success": True, "message": "Registro concluído com sucesso!"})
+        
+        # Formatando a data para log
+        expiry_str = "sem expiração" if not expiration_date else expiration_date.strftime("%d/%m/%Y %H:%M:%S")
+        logging.info(f"Usuário {username} registrado com sucesso. Data de expiração: {expiry_str}")
+        
+        return jsonify({
+            "success": True, 
+            "message": "Registro concluído com sucesso!",
+            "expirationDate": expiry_str if expiration_date else None
+        })
     except Exception as e:
         conn.rollback()
         cur.close()
         conn.close()
+        logging.error(f"Erro ao registrar usuário {username}: {str(e)}")
         return jsonify({"success": False, "message": f"Erro ao registrar: {str(e)}"})
 
 @app.route('/validate_key', methods=['POST'])
@@ -383,16 +397,27 @@ def login():
         except Exception as e:
             conn.rollback()
     
+    # Extrair data de expiração
+    expiration_date = user['expiration_date']
+    expiration_str = None
+    
+    if expiration_date:
+        expiration_str = int(expiration_date.timestamp())  # Converter para timestamp UNIX
+    
     # Fechar recursos
     cur.close()
     conn.close()
+    
+    # Registrar login bem-sucedido
+    logging.info(f"Login bem-sucedido para o usuário: {username}")
     
     # Login bem-sucedido
     return jsonify({
         "success": True,
         "message": "Login bem-sucedido",
         "username": user['username'],
-        "isAdmin": user.get('is_admin', False)
+        "isAdmin": user.get('is_admin', False),
+        "expirationDate": expiration_str
     })
 
 @app.route('/check_expiration', methods=['POST'])
@@ -403,52 +428,75 @@ def check_expiration():
         password = data.get('password')
         hwid = data.get('hwid')
 
-        if not all([username, password, hwid]):
+        if not all([username, password]):
             return jsonify({"valid": False, "message": "Dados incompletos"}), 400
 
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
         # Verifica usuário e admin status
         cur.execute("""
-            SELECT is_admin, expiration_date 
-            FROM users 
-            WHERE username = %s AND password = %s AND hwid = %s
-        """, (username, password, hwid))
+            SELECT * FROM users 
+            WHERE username = %s AND password = %s
+        """, (username, password))
         
         user = cur.fetchone()
         
         if not user:
+            cur.close()
+            conn.close()
             return jsonify({"valid": False, "message": "Usuário não encontrado"}), 404
 
-        is_admin, expiration_date = user
+        # Verificar se HWID corresponde (se fornecido)
+        if hwid and user['hwid'] != '0' and hwid != user['hwid'] and hwid != user['vmid']:
+            cur.close()
+            conn.close()
+            return jsonify({"valid": False, "message": "HWID não corresponde ao usuário"}), 403
+            
+        # Verificar status administrativo
+        is_admin = user.get('is_admin', False)
+        expiration_date = user.get('expiration_date')
 
         # Se for admin, retorna válido
         if is_admin:
+            cur.close()
+            conn.close()
             return jsonify({
                 "valid": True,
                 "isAdmin": True,
-                "message": "Conta administrativa"
+                "message": "Conta administrativa",
+                "expirationDate": None  # Administradores não têm data de expiração
             }), 200
 
         # Se não tiver data de expiração
         if not expiration_date:
+            cur.close()
+            conn.close()
             return jsonify({
                 "valid": False,
-                "message": "Data de expiração não encontrada"
-            }), 400
+                "message": "Data de expiração não encontrada",
+                "expirationDate": None
+            }), 200  # Mudar para 200 para que o cliente ainda mostre a mensagem
 
         # Calcula dias restantes
         now = datetime.datetime.now()
         remaining = expiration_date - now
         is_valid = expiration_date > now
+        
         # Calcula dias e horas restantes
         remaining_days = remaining.days
         remaining_hours = remaining.seconds // 3600  # Converte segundos para horas
+        
+        # Converter data de expiração para timestamp
+        expiration_timestamp = int(expiration_date.timestamp())
 
+        cur.close()
+        conn.close()
+        
         return jsonify({
             "valid": is_valid,
-            "expirationDate": expiration_date.strftime("%d/%m/%Y"),
+            "expirationDate": expiration_timestamp,
+            "expirationFormatted": expiration_date.strftime("%d/%m/%Y %H:%M"),
             "remainingDays": remaining_days,
             "remainingHours": remaining_hours,
             "message": "Licença válida" if is_valid else "Licença expirada"
@@ -456,16 +504,15 @@ def check_expiration():
 
     except Exception as e:
         logging.error(f"Erro ao verificar expiração: {str(e)}")
+        if 'cur' in locals() and cur:
+            cur.close()
+        if 'conn' in locals() and conn:
+            conn.close()
+            
         return jsonify({
             "valid": False,
             "message": f"Erro interno: {str(e)}"
         }), 500
-
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
 
 @app.route('/health', methods=['GET'])
 def health_check():
