@@ -922,10 +922,23 @@ def handle_exception(e):
 @app.route('/registrar_click', methods=['POST'])
 def registrar_click():
     try:
+        logging.info(f"Requisição recebida em registrar_click: {request.get_data(as_text=True)}")
+        logging.info(f"Cabeçalhos: {dict(request.headers)}")
+        
+        if not request.is_json:
+            logging.error("A requisição não é JSON (Content-Type incorreto ou corpo inválido)")
+            return jsonify({
+                "success": False,
+                "message": "Content-Type deve ser application/json"
+            }), 415
+        
         data = request.get_json()
+        logging.info(f"JSON recebido: {data}")
         tipo = data.get('tipo')  # 'spoof' ou 'fivem_clean'
+        logging.info(f"Tipo extraído: {tipo}")
         
         if not tipo or tipo not in ['spoof', 'fivem_clean']:
+            logging.error(f"Tipo de operação inválido: {tipo}")
             return jsonify({
                 "success": False,
                 "message": "Tipo de operação inválido"
@@ -1012,6 +1025,88 @@ def obter_estatisticas():
         return jsonify({
             "success": False,
             "message": f"Erro ao obter estatísticas: {str(e)}"
+        }), 500
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
+# Nova rota para inicializar a tabela de estatísticas
+@app.route('/inicializar_estatisticas', methods=['GET'])
+def inicializar_estatisticas():
+    try:
+        logging.info("Solicitação para inicializar a tabela de estatísticas")
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verificar se a tabela já existe
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'configuracoes_sistema'
+            );
+        """)
+        
+        tabela_existe = cur.fetchone()[0]
+        
+        if not tabela_existe:
+            logging.info("Tabela configuracoes_sistema não existe. Criando...")
+            
+            # Criar a tabela configuracoes_sistema
+            cur.execute("""
+                CREATE TABLE configuracoes_sistema (
+                    id SERIAL PRIMARY KEY,
+                    ultima_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    total_spoofs INTEGER DEFAULT 0,
+                    total_fivem_cleans INTEGER DEFAULT 0
+                );
+            """)
+            
+            # Inserir o registro inicial
+            cur.execute("""
+                INSERT INTO configuracoes_sistema (ultima_atualizacao, total_spoofs, total_fivem_cleans)
+                VALUES (CURRENT_TIMESTAMP, 0, 0);
+            """)
+            
+            conn.commit()
+            logging.info("Tabela configuracoes_sistema criada e inicializada com sucesso.")
+            
+            return jsonify({
+                "success": True,
+                "message": "Tabela de estatísticas criada e inicializada com sucesso.",
+                "spoofs": 0,
+                "fivem_cleans": 0
+            }), 200
+        else:
+            logging.info("Tabela configuracoes_sistema já existe.")
+            
+            # Verificar se há pelo menos um registro
+            cur.execute("SELECT COUNT(*) FROM configuracoes_sistema;")
+            count = cur.fetchone()[0]
+            
+            if count == 0:
+                logging.info("Tabela existe mas está vazia. Inserindo registro inicial.")
+                cur.execute("""
+                    INSERT INTO configuracoes_sistema (ultima_atualizacao, total_spoofs, total_fivem_cleans)
+                    VALUES (CURRENT_TIMESTAMP, 0, 0);
+                """)
+                conn.commit()
+                
+            return jsonify({
+                "success": True,
+                "message": "Tabela de estatísticas já existe e está pronta.",
+                "registros": count
+            }), 200
+    
+    except Exception as e:
+        logging.error(f"Erro ao inicializar tabela de estatísticas: {str(e)}")
+        if 'conn' in locals():
+            conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao inicializar tabela de estatísticas: {str(e)}"
         }), 500
     finally:
         if 'cur' in locals():
