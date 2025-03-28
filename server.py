@@ -918,6 +918,107 @@ def handle_exception(e):
         logging.error(f"Dados JSON recebidos: {request.get_json()}")
     return jsonify({"success": False, "message": f"Erro interno do servidor: {str(e)}"}), 500
 
+# Nova rota para registrar cliques de spoof e fivem_clean
+@app.route('/registrar_click', methods=['POST'])
+def registrar_click():
+    try:
+        data = request.get_json()
+        tipo = data.get('tipo')  # 'spoof' ou 'fivem_clean'
+        
+        if not tipo or tipo not in ['spoof', 'fivem_clean']:
+            return jsonify({
+                "success": False,
+                "message": "Tipo de operação inválido"
+            }), 400
+            
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Atualiza o contador correspondente
+        if tipo == 'spoof':
+            cur.execute("""
+                UPDATE configuracoes_sistema 
+                SET total_spoofs = total_spoofs + 1, 
+                    ultima_atualizacao = CURRENT_TIMESTAMP 
+                WHERE id = 1
+                RETURNING total_spoofs
+            """)
+            novo_valor = cur.fetchone()[0]
+        else:  # fivem_clean
+            cur.execute("""
+                UPDATE configuracoes_sistema 
+                SET total_fivem_cleans = total_fivem_cleans + 1, 
+                    ultima_atualizacao = CURRENT_TIMESTAMP 
+                WHERE id = 1
+                RETURNING total_fivem_cleans
+            """)
+            novo_valor = cur.fetchone()[0]
+            
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": f"Click de {tipo} registrado com sucesso",
+            "novo_valor": novo_valor
+        }), 200
+    
+    except Exception as e:
+        logging.error(f"Erro ao registrar click: {str(e)}")
+        if 'conn' in locals():
+            conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao registrar click: {str(e)}"
+        }), 500
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
+# Nova rota para obter estatísticas do sistema
+@app.route('/estatisticas', methods=['GET'])
+def obter_estatisticas():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        cur.execute("""
+            SELECT ultima_atualizacao, total_spoofs, total_fivem_cleans 
+            FROM configuracoes_sistema 
+            WHERE id = 1
+        """)
+        
+        resultado = cur.fetchone()
+        
+        if resultado:
+            # Formatar a data
+            data_formatada = resultado['ultima_atualizacao'].strftime("%d/%m/%Y")
+            
+            return jsonify({
+                "success": True,
+                "atualizado": data_formatada,
+                "spoofs": resultado['total_spoofs'],
+                "fivem_cleans": resultado['total_fivem_cleans']
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Nenhuma estatística encontrada"
+            }), 404
+    
+    except Exception as e:
+        logging.error(f"Erro ao obter estatísticas: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao obter estatísticas: {str(e)}"
+        }), 500
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
 if __name__ == '__main__':
     # Modo de desenvolvimento
     if os.environ.get('FLASK_ENV') == 'development':
